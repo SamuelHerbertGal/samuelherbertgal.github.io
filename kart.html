@@ -68,6 +68,7 @@ function nearestIdx(x,y){
   return best;
 }
 function onTrack(x,y){const i=nearestIdx(x,y);if(i<0)return false;return(TP[i].x-x)**2+(TP[i].y-y)**2<TW*TW;}
+function inOffroad(x,y){const i=nearestIdx(x,y);if(i<0)return false;const d=(TP[i].x-x)**2+(TP[i].y-y)**2;return d>=TW*TW&&d<(TW*1.6)**2;}
 
 const BOOSTPADS=[
   {tp:60,w:80,h:40},{tp:150,w:80,h:40},{tp:250,w:80,h:40},
@@ -84,13 +85,14 @@ function onBoostPad(x,y){
 // Pre-render world background
 const BG=document.createElement('canvas');BG.width=WW;BG.height=WH;
 const bg=BG.getContext('2d');
-// Grass with pattern
+// Grass base
 bg.fillStyle='#1a7a1a';bg.fillRect(0,0,WW,WH);
-for(let y=0;y<WH;y+=16)for(let x=0;x<WW;x+=16){
-  if((x/16+y/16)%2===0){bg.fillStyle='rgba(0,100,0,.15)';bg.fillRect(x,y,16,16);}
+// Grass pattern with variation
+for(let y=0;y<WH;y+=24)for(let x=0;x<WW;x+=24){
+  if((x/24+y/24)%2===0){bg.fillStyle='rgba(20,120,20,.2)';bg.fillRect(x,y,24,24);}
 }
-// Grass darker lines for pattern
-for(let y=0;y<WH;y+=32){bg.fillStyle='rgba(0,0,0,.06)';bg.fillRect(0,y,WW,32);}
+// Grass lines
+for(let y=0;y<WH;y+=48){bg.fillStyle='rgba(0,0,0,.08)';bg.fillRect(0,y,WW,24);}
 // Track shadow/depth
 bg.strokeStyle='rgba(0,0,0,.4)';bg.lineWidth=TW*2+20;bg.lineCap='round';bg.lineJoin='round';
 bg.beginPath();TP.forEach((p,i)=>i?bg.lineTo(p.x,p.y):bg.moveTo(p.x,p.y));bg.closePath();bg.stroke();
@@ -259,52 +261,86 @@ class Kart{
       driftKey=!!(keys['Shift']||keys['x']||keys['X']);
     }else if(!this.isPlayer&&go&&this.aiDelay<=0){
       const wp=TP[this.aiWP];
-      str=clamp(adiff(this.angle,Math.atan2(wp.y-this.y,wp.x-this.x))*2.8,-1,1);
-      thr=place>=3?1.12:1;
-      if(dist(this,wp)<42)this.aiWP=(this.aiWP+5)%TN;
+      const wpDist=dist(this,wp);
+      const targetAngle=Math.atan2(wp.y-this.y,wp.x-this.x);
+      const angleDiff=adiff(this.angle,targetAngle);
+
+      // AI steering - smoother and more human-like
+      str=clamp(angleDiff*2.6,-1,1);
+
+      // AI drifting on sharp turns
+      if(Math.abs(angleDiff)>.5&&this.vel>100&&this.onTrack&&!this.drifting){
+        driftKey=true;
+      }
+
+      // Throttle management - full power when behind, conservative when ahead
+      thr=place>=2?1.15:(place===1&&Math.random()>.15?1:-Math.random()*.3);
+
+      if(wpDist<35)this.aiWP=(this.aiWP+4+Math.random()*3)%TN;
+
       if(this.item&&this.aiItemT<=0){
         let shouldUse=false;
         if(this.item==='shell'||this.item==='redshell'||this.item==='bobomb')shouldUse=place<=2;
         else if(this.item==='banana')shouldUse=place===1;
         else if(this.item==='star'||this.item==='boost'||this.item==='triboost')shouldUse=true;
-        else shouldUse=Math.random()<.4;
-        if(shouldUse){this.useItem(projs,karts);this.aiItemT=6+Math.random()*6;}
+        else shouldUse=Math.random()<.45;
+        if(shouldUse){this.useItem(projs,karts);this.aiItemT=7+Math.random()*8;}
         else this.aiItemT-=dt;
       }
     }else if(this.aiDelay>0)this.aiDelay-=dt;
 
     if(this.spinning>0){thr=0;str=0;}
 
-    // Drift
-    if(driftKey&&Math.abs(str)>.3&&this.vel>90&&this.onTrack){
+    // Realistic drift with counter-steering bonus
+    if(driftKey&&Math.abs(str)>.25&&this.vel>85&&this.onTrack){
       if(!this.drifting){this.drifting=true;this.driftDir=str>0?1:-1;}
     }
-    if(!driftKey||this.vel<60)this.drifting=false;
+    if(!driftKey||this.vel<50)this.drifting=false;
     if(this.drifting){
-      this.driftCharge=Math.min(this.driftCharge+dt,2.5);
-      str=str*.4+this.driftDir*.9;
-      if(this.driftCharge>.4&&Math.random()<.35)
-        spawnP(this.x,this.y,1,this.driftCharge>1.5?'#ff8800':'#4488ff',1.5);
+      this.driftCharge=Math.min(this.driftCharge+dt*1.3,3);
+      // Counter-steering gives more charge
+      const counterSteer=Math.sign(str)===Math.sign(this.driftDir)?-.5:1.2;
+      str=str*.3+this.driftDir*(1+counterSteer*.4);
+      if(this.driftCharge>.5&&Math.random()<.4)
+        spawnP(this.x,this.y,2,this.driftCharge>1.8?'#ff6600':'#4488ff',2);
     }else if(this.driftCharge>0){
-      if(this.driftCharge>.7){this.boosting=.4+this.driftCharge*.5;sfx.turbo();}
+      if(this.driftCharge>.8){
+        const boost=.5+this.driftCharge*.6;
+        this.boosting=boost;
+        sfx.turbo();
+      }
       this.driftCharge=0;
     }
 
-    this.vel=clamp(this.vel+thr*235*this.accel*dt,-50,this.maxSpd);
-    this.vel*=this.onTrack?.976:.86;
-    if(onBoostPad(this.x,this.y)&&this.vel>120){this.vel=Math.min(this.vel*1.15,this.maxSpd);if(Math.random()<.15)spawnP(this.x,this.y,1,'#ffaa22',2);}
+    // Realistic acceleration based on weight
+    const friction=this.onTrack?.978:(inOffroad(this.x,this.y)?.91:.84);
+    this.vel=clamp(this.vel+thr*220*this.accel*dt,-40,this.maxSpd);
+    this.vel*=friction;
+
+    if(onBoostPad(this.x,this.y)&&this.vel>120){this.vel=Math.min(this.vel*1.2,this.maxSpd);if(Math.random()<.2)spawnP(this.x,this.y,1,'#ffaa22',2.5);}
     if(Math.abs(this.vel)<.4&&thr===0)this.vel=0;
+
+    // Realistic steering - heavier karts have better stability (less oversteer)
     if(Math.abs(this.vel)>5){
-      const tr=2.5*(1-Math.abs(this.vel)/(this.maxSpd*1.7))+.55;
+      const baseT=2.4*(1-Math.abs(this.vel)/(this.maxSpd*1.7))+.6;
+      const stabilityBonus=this.weight==='heavy'?.92:this.weight==='light'?1.15:1;
+      const tr=baseT*stabilityBonus*this.grip;
       this.angle+=str*tr*(this.vel>0?1:-1)*dt;
     }
+
+    // Tire slip particles on high-speed turns
+    if(Math.abs(this.vel)>150&&Math.abs(str)>0.5&&this.onTrack&&Math.random()<.3){
+      spawnP(this.x,this.y,1,this.drifting?'#ff6600':'#999',1.5);
+    }
+
     this.x=clamp(this.x+Math.cos(this.angle)*this.vel*dt,5,WW-5);
     this.y=clamp(this.y+Math.sin(this.angle)*this.vel*dt,5,WH-5);
     this.onTrack=onTrack(this.x,this.y);
 
     if(this.starring>0&&Math.random()<.4)spawnP(this.x,this.y,2,`hsl(${Date.now()/4%360},100%,60%)`,1.5);
-    if(this.boosting>0&&Math.random()<.25)spawnP(this.x-Math.cos(this.angle)*20,this.y-Math.sin(this.angle)*20,1,'#4499ff',2);
-    if(!this.onTrack&&Math.abs(this.vel)>20&&Math.random()<.2)spawnP(this.x,this.y,1,'#3a7',1.5);
+    if(this.boosting>0&&Math.random()<.3)spawnP(this.x-Math.cos(this.angle)*20,this.y-Math.sin(this.angle)*20,2,'#4499ff',2.5);
+    if(inOffroad(this.x,this.y)&&Math.abs(this.vel)>30&&Math.random()<.35)spawnP(this.x,this.y,1,'#8b7355',2);
+    if(!this.onTrack&&!inOffroad(this.x,this.y)&&Math.abs(this.vel)>20&&Math.random()<.25)spawnP(this.x,this.y,2,'#2d5016',1.5);
 
     // Checkpoints
     const ncp=(this.cp+1)%NCP,cpt=TP[CPI[ncp]];
@@ -673,17 +709,17 @@ function drawTitle(){
   ctx.font='bold 72px Arial';ctx.fillStyle='#FFD700';ctx.strokeStyle='#8a6000';ctx.lineWidth=5;
   ctx.strokeText('🏎️  KART DASH!  🏎️',W/2,110);ctx.fillText('🏎️  KART DASH!  🏎️',W/2,110);
   const rows=[
-    ['3 opponents · 3 laps · 9 items · weight classes · boost pads','#bbb','14px Arial'],
-    ['Chase camera · drift mechanics · strategic items','#999','13px Arial'],
+    ['3 opponents · 3 laps · 9 items · realistic physics','#bbb','14px Arial'],
+    ['Weight classes • off-road penalty • counter-steering bonus • AI drifting','#999','13px Arial'],
     ['','',''],
     ['W A S D  /  ↑ ↓ ← →   drive','#aef','bold 15px Arial'],
-    ['SHIFT / X   drift  →  release for turbo!','#aef','bold 15px Arial'],
-    ['SPACE   use item (spinning roulette animation)','#aef','bold 15px Arial'],
+    ['SHIFT / X   drift & counter-steer for turbo boost!','#aef','bold 15px Arial'],
+    ['SPACE   use item','#aef','bold 15px Arial'],
     ['','',''],
     ['🍄 Mushroom  🍄×3  🐢 Green Shell  🔴 Red Shell','#ffd','14px Arial'],
-    ['🍌 Banana (slips karts!)  ⭐ Star  💙 Blue Shell  ⚡ Lightning  💣 Bob-omb','#ffd','14px Arial'],
+    ['🍌 Banana  ⭐ Star  💙 Blue Shell  ⚡ Lightning  💣 Bob-omb','#ffd','14px Arial'],
     ['','',''],
-    ['Position-based item pools · AI uses items strategically!','#888','13px Arial'],
+    ['Heavier karts: slower accel, more grip · Lighter karts: faster, driftier','#888','13px Arial'],
   ];
   rows.forEach(([t,c,f],i)=>{if(!t)return;ctx.font=f||'16px Arial';ctx.fillStyle=c;ctx.fillText(t,W/2,195+i*28);});
   ctx.font='bold 28px Arial';ctx.fillStyle='#FFD700';
