@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Speed Strike 3000: Ultra Neon Edition</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap" rel="stylesheet">
+    <style>
+        :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; }
+        body { 
+            background: #000; color: var(--neon-blue); 
+            font-family: 'Orbitron', sans-serif; 
+            display: flex; align-items: center; justify-content: center; 
+            height: 100vh; margin: 0; overflow: hidden; 
+        }
+        #game-container { position: relative; border: 4px solid var(--neon-blue); box-shadow: 0 0 30px var(--neon-blue); }
+        #ui { 
+            position: absolute; top: -50px; width: 100%; 
+            display: flex; justify-content: space-between; 
+            font-size: 1.2rem; text-transform: uppercase;
+        }
+        .overlay { 
+            position: absolute; top: 0; left: 0; width: 800px; height: 600px; 
+            background: rgba(0,0,0,0.95); display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; z-index: 100; 
+        }
+        #status-msg { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+            font-size: 5rem; display: none; z-index: 50; text-align: center; pointer-events: none;
+        }
+        h1 { font-size: 4rem; text-shadow: 0 0 20px var(--neon-pink); color: #fff; margin: 0; font-style: italic; }
+        button { 
+            background: transparent; color: var(--neon-blue); border: 3px solid var(--neon-blue); 
+            padding: 15px 50px; cursor: pointer; font-family: 'Orbitron'; font-size: 1.5rem; 
+            margin-top: 30px; transition: 0.3s; 
+        }
+        button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 50px var(--neon-blue); }
+        .stat-val { color: #fff; text-shadow: 0 0 10px var(--neon-blue); }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="ui">
+            <span>Score: <span id="score" class="stat-val">0</span></span>
+            <span>Level: <span id="level" class="stat-val">1</span></span>
+            <span>Lives: <span id="lives" class="stat-val">3</span></span>
+        </div>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="status-msg">PAUSED</div>
+        <div id="msg-overlay" class="overlay">
+            <h1 id="title">SPEED STRIKE 3000</h1>
+            <p id="subtitle">SYSTEMS READY... [P] TO PAUSE</p>
+            <button id="start-btn">INITIALIZE</button>
+        </div>
+    </div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const overlay = document.getElementById("msg-overlay");
+const startBtn = document.getElementById("start-btn");
+const statusMsg = document.getElementById("status-msg");
+
+let audioCtx;
+let shiftMode = false;
+let altMode = false;
+let breakCount = 0;
+let bonusTimeout;
+
+// Input tracking engine
+const keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false, Control: false };
+
+let game = { 
+    active: false, paused: false, isBonus: false,
+    score: 0, lives: 3, level: 1, shake: 0,
+    balls: [], bricks: [], powerUps: [] 
+};
+
+const paddle = { x: 335, width: 130, height: 15, dx: 0, speed: 14 };
+
+function playSound(f, d, v=0.08) {
+    if(!audioCtx) return;
+    let o = audioCtx.createOscillator();
+    let g = audioCtx.createGain();
+    o.frequency.setValueAtTime(f, audioCtx.currentTime);
+    g.gain.setValueAtTime(v, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + d);
+}
+
+class Ball {
+    constructor(x, y, dx, dy) {
+        this.x = x; this.y = y;
+        this.dx = dx || (Math.random() > 0.5 ? 5 : -5);
+        this.dy = dy || -6;
+        this.radius = 8;
+        this.hyper = false;
+        this.lastDx = this.dx;
+        this.lastDy = this.dy;
+    }
+    update() {
+        if (keys.Control) {
+            this.dx = 0;
+            this.dy = 0;
+            if (keys.ArrowLeft) this.dx = -8;
+            if (keys.ArrowRight) this.dx = 8;
+            if (keys.ArrowUp) this.dy = -8;
+            if (keys.ArrowDown) this.dy = 8;
+        } else {
+            if (this.dx === 0 && this.dy === 0) {
+                this.dx = this.lastDx || (Math.random() > 0.5 ? 5 : -5);
+                this.dy = this.lastDy || -6;
+            }
+            this.lastDx = this.dx;
+            this.lastDy = this.dy;
+        }
+
+        this.x += this.dx; this.y += this.dy;
+        
+        this.x = Math.max(8, Math.min(792, this.x));
+        this.y = Math.max(8, Math.min(615, this.y));
+
+        if(this.x <= 8 || this.x >= 792) { this.dx *= -1; playSound(220, 0.1); game.shake = 3; }
+        if(this.y <= 8) { this.dy *= -1; playSound(300, 0.1); }
+        
+        if (!shiftMode) {
+            if (this.y > 560 && this.y < 580 && this.x > paddle.x && this.x < paddle.x + paddle.width) {
+                this.dy = -Math.abs(this.dy);
+                this.dx = ((this.x - (paddle.x + paddle.width/2)) / (paddle.width/2)) * 9;
+                playSound(150, 0.2);
+            }
+        } else {
+            const pX = paddle.x + 57; 
+            if (this.y > 450 && this.y < 585 && this.x > pX - 8 && this.x < pX + 23) {
+                this.dx = this.x < (pX + 7.5) ? -Math.abs(this.dx) : Math.abs(this.dx);
+                this.dy = ((this.y - (455 + 65)) / 65) * 9;
+                if (Math.abs(this.dy) < 2) this.dy = this.dy < 0 ? -3 : 3; 
+                playSound(150, 0.2);
+            }
+        }
+    }
+}
+
+function spawnLevel() {
+    game.bricks = [];
+    const rows = 3 + Math.min(game.level, 5);
+    const cols = 9;
+    for(let c=0; c<cols; c++) {
+        game.bricks[c] = [];
+        for(let r=0; r<rows; r++) {
+            game.bricks[c][r] = { 
+                x: c*84+35, y: r*32+60, status: 1, 
+                color: game.isBonus ? "#ffd700" : `hsl(${c*40 + (game.level*30)}, 100%, 50%)` 
+            };
+        }
+    }
+}
+
+function triggerBonus() {
+    game.isBonus = true;
+    statusMsg.innerText = "BONUS ROUND!";
+    statusMsg.style.color = "var(--gold)";
+    statusMsg.style.display = "block";
+    spawnLevel();
+    
+    bonusTimeout = setTimeout(endBonus, 10000);
+}
+
+function endBonus() {
+    game.isBonus = false;
+    statusMsg.style.display = "none";
+    game.level++;
+    
+    // Controlled via holding down the Alt Key
+    if (!altMode) {
+        game.balls = [new Ball(400, 500)];
+    } else if (game.balls.length === 0) {
+        game.balls = [new Ball(400, 500)];
+    }
+    
+    spawnLevel();
+}
+
+startBtn.addEventListener('click', () => {
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    clearTimeout(bonusTimeout);
+    game.active = true; game.paused = false; game.score = 0; game.lives = 3; game.level = 1; game.isBonus = false;
+    statusMsg.style.display = "none";
+    game.balls = [new Ball(400, 500)];
+    game.powerUps = [];
+    breakCount = 0;
+    spawnLevel();
+    overlay.style.display = "none";
+    requestAnimationFrame(gameLoop);
+});
+
+function gameLoop() {
+    if(!game.active || game.paused) return;
+
+    if(game.shake > 0) game.shake *= 0.9;
+
+    paddle.dx = 0;
+    if (!keys.Control) {
+        if (keys.ArrowLeft) paddle.dx = -paddle.speed;
+        if (keys.ArrowRight) paddle.dx = paddle.speed;
+    }
+    
+    paddle.x += paddle.dx;
+    paddle.x = Math.max(0, Math.min(800 - paddle.width, paddle.x));
+
+    game.balls.forEach((b, bi) => {
+        b.update();
+        game.bricks.forEach(col => col.forEach(br => {
+            if(br.status === 1 && b.x > br.x && b.x < br.x + 75 && b.y > br.y && b.y < br.y + 25) {
+                br.status = 0;
+                if(!b.hyper) b.dy *= -1;
+                game.score += game.isBonus ? 500 : 100;
+                playSound(440 + (bi * 50), 0.05);
+                
+                if(!game.isBonus) {
+                    // Multi-drop functionality controlled via holding down the Alt Key
+                    if (altMode) {
+                        breakCount++;
+                        if (breakCount % 2 === 0) {
+                            game.powerUps.push({x: br.x+30, y: br.y, type: 'MULTI', dy: 3.5});
+                        } else if (Math.random() < 0.15) {
+                            const types = ['LIFE', 'MULTI', 'HYPER'];
+                            game.powerUps.push({x: br.x+30, y: br.y, type: types[Math.floor(Math.random()*3)], dy: 3.5});
+                        }
+                    } else if (Math.random() < 0.15) {
+                        const types = ['LIFE', 'MULTI', 'HYPER'];
+                        game.powerUps.push({x: br.x+30, y: br.y, type: types[Math.floor(Math.random()*3)], dy: 3.5});
+                    }
+                }
+            }
+        }));
+
+        if(b.y > 610) {
+            if(game.isBonus) { b.dy *= -1; b.y = 590; }
+            else {
+                game.balls.splice(bi, 1);
+                if(game.balls.length === 0) {
+                    game.lives--; game.shake = 15;
+                    playSound(100, 0.5, 0.2);
+                    if(game.lives <= 0) {
+                        game.active = false;
+                        overlay.style.display = "flex";
+                        document.getElementById("title").innerText = "MISSION FAILED";
+                        startBtn.innerText = "RETRY";
+                    } else { game.balls.push(new Ball(400, 500)); }
+                }
+            }
+        }
+    });
+
+    if(game.bricks.flat().every(b => b.status === 0)) {
+        if (!game.isBonus) {
+            triggerBonus();
+        } else {
+            clearTimeout(bonusTimeout);
+            endBonus();
+        }
+    }
+
+    game.powerUps.forEach((p, i) => {
+        p.y += p.dy;
+        
+        const collectY = shiftMode ? 455 : 565;
+        const collectXMin = shiftMode ? paddle.x + 57 : paddle.x;
+        const collectXMax = shiftMode ? paddle.x + 72 : paddle.x + paddle.width;
+
+        if(p.y > collectY && p.x > collectXMin && p.x < collectXMax) {
+            if(p.type === 'MULTI') {
+                game.balls.push(new Ball(paddle.x, 550, -6, -5));
+                game.balls.push(new Ball(paddle.x + paddle.width, 550, 6, -5));
+            } else if(p.type === 'LIFE') game.lives++;
+            else if(p.type === 'HYPER') {
+                game.balls.forEach(ball => ball.hyper = true);
+                setTimeout(() => game.balls.forEach(ball => ball.hyper = false), 6000);
+            }
+            game.powerUps.splice(i, 1);
+            playSound(800, 0.3, 0.1);
+        }
+    });
+
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+function draw() {
+    let sx = (Math.random() - 0.5) * game.shake;
+    let sy = (Math.random() - 0.5) * game.shake;
+    ctx.setTransform(1, 0, 0, 1, sx, sy);
+
+    ctx.fillStyle = "#000"; ctx.fillRect(0,0,800,600);
+    
+    game.bricks.forEach(col => col.forEach(br => {
+        if(br.status === 1) {
+            ctx.fillStyle = br.color;
+            ctx.shadowBlur = 12; ctx.shadowColor = br.color;
+            ctx.fillRect(br.x, br.y, 75, 25);
+        }
+    }));
+    
+    ctx.shadowBlur = 0;
+    
+    const pRect = shiftMode ? { x: paddle.x + 57, y: 455, w: 15, h: 130 } : { x: paddle.x, y: 570, w: 130, h: 15 };
+    
+    ctx.fillStyle = "#000044";
+    ctx.fillRect(pRect.x, pRect.y, pRect.w, pRect.h);
+    ctx.strokeStyle = "#00f2ff";
+    ctx.strokeRect(pRect.x, pRect.y, pRect.w, pRect.h);
+
+    game.balls.forEach(b => {
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2);
+        ctx.fillStyle = b.hyper ? "#fff" : (game.isBonus ? "var(--gold)" : "#ff00ff");
+        if(b.hyper) { ctx.shadowBlur = 20; ctx.shadowColor = "#fff"; }
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    });
+
+    game.powerUps.forEach(p => {
+        ctx.fillStyle = p.type === 'MULTI' ? "#0f0" : p.type === 'LIFE' ? "#f00" : "#fff";
+        ctx.font = "bold 16px Orbitron";
+        ctx.fillText(p.type, p.x, p.y);
+    });
+
+    document.getElementById("score").innerText = game.score;
+    document.getElementById("lives").innerText = game.lives;
+    document.getElementById("level").innerText = game.level;
+    
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+window.addEventListener("keydown", e => {
+    if (e.key in keys) keys[e.key] = true;
+    if (e.key === "Shift") shiftMode = true;
+    if (e.key === "Alt") {
+        altMode = true;
+        e.preventDefault(); // Stop window menu conflict focus
+    }
+    
+    if(e.key.toLowerCase() === "p") {
+        game.paused = !game.paused;
+        statusMsg.innerText = "PAUSED";
+        statusMsg.style.color = "var(--neon-pink)";
+        statusMsg.style.display = game.paused ? "block" : "none";
+        if(!game.paused) requestAnimationFrame(gameLoop);
+    }
+});
+
+window.addEventListener("keyup", e => {
+    if (e.key in keys) keys[e.key] = false;
+    if (e.key === "Shift") shiftMode = false;
+    if (e.key === "Alt") altMode = false;
+});
+
+draw();
+</script>
+</body>
+</html>
