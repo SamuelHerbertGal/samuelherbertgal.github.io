@@ -70,7 +70,7 @@ let speedMult = 1;
 const INIT_WIDTH = 130;
 const PADDLE_Y = 577;        // vertical center of the paddle
 const PADDLE_THICK = 15;
-const MAX_ANGLE = 0.6;       // ~34 degrees of tilt each way
+const TILT_RATE = 0.08;      // radians per frame while tilting
 
 // Input tracking engine
 const keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false, Control: false };
@@ -167,7 +167,6 @@ class Ball {
                 this.x += nx * overlap; this.y += ny * overlap; // push out of paddle
                 const sp = Math.hypot(this.dx, this.dy);
                 if (sp > 13) { this.dx = this.dx / sp * 13; this.dy = this.dy / sp * 13; }
-                if (this.dy > -2) this.dy = -2;                 // always clear the paddle upward
                 playSound(150, 0.2);
             }
         }
@@ -238,8 +237,8 @@ function gameLoop() {
         // SHIFT + Up/Down resizes, SHIFT + Left/Right tilts
         if (keys.ArrowUp) paddle.width = Math.min(paddle.width + 2, 400);
         if (keys.ArrowDown) paddle.width = Math.max(paddle.width - 2, 20);
-        if (keys.ArrowLeft) paddle.angle = Math.max(paddle.angle - 0.04, -MAX_ANGLE);
-        if (keys.ArrowRight) paddle.angle = Math.min(paddle.angle + 0.04, MAX_ANGLE);
+        if (keys.ArrowLeft) paddle.angle = (paddle.angle - TILT_RATE) % (Math.PI * 2);
+        if (keys.ArrowRight) paddle.angle = (paddle.angle + TILT_RATE) % (Math.PI * 2);
     } else if (!keys.Control) {
         if (keys.ArrowLeft) paddle.dx = -paddle.speed;
         if (keys.ArrowRight) paddle.dx = paddle.speed;
