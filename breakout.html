@@ -310,7 +310,7 @@ function draw() {
     
     ctx.shadowBlur = 0;
     
-    const pRect = shiftMode ? { x: paddle.x + 57, y: 455, w: 15, h: 130 } : { x: paddle.x, y: 570, w: 130, h: 15 };
+    const pRect = shiftMode ? { x: paddle.x + 57, y: 455, w: 15, h: 130 } : { x: paddle.x, y: 570, w: paddle.width, h: 15 };
     
     ctx.fillStyle = "#000044";
     ctx.fillRect(pRect.x, pRect.y, pRect.w, pRect.h);
