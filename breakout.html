@@ -206,6 +206,11 @@ function gameLoop() {
         if (keys.ArrowRight) paddle.dx = paddle.speed;
     }
     
+    if (altMode) {
+        if (keys.ArrowUp) paddle.width = Math.min(paddle.width + 2, 400);
+        if (keys.ArrowDown) paddle.width = Math.max(paddle.width - 2, 20);
+    }
+
     paddle.x += paddle.dx;
     paddle.x = Math.max(0, Math.min(800 - paddle.width, paddle.x));
 
