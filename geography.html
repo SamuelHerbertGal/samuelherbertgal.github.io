@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Globe Trekker: Neon Geography Quiz</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        background: radial-gradient(circle at 50% 20%, #14143a 0%, #05050f 70%);
+        color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        min-height: 100vh; display: flex; align-items: center; justify-content: center;
+        padding: 20px; overflow-x: hidden;
+    }
+    #app {
+        width: 100%; max-width: 640px; border: 3px solid var(--neon-blue);
+        border-radius: 18px; box-shadow: 0 0 35px rgba(0,242,255,0.4);
+        background: rgba(5,5,20,0.85); padding: 28px; position: relative;
+    }
+    h1 { font-size: 2.4rem; font-weight: 900; font-style: italic; color: #fff;
+        text-shadow: 0 0 20px var(--neon-pink); text-align: center; line-height: 1.1; }
+    .sub { text-align: center; color: var(--neon-blue); font-size: 0.85rem;
+        letter-spacing: 2px; text-transform: uppercase; margin: 10px 0 26px; opacity: 0.8; }
+    .hidden { display: none !important; }
+
+    /* HUD */
+    #hud { display: flex; justify-content: space-between; align-items: center;
+        font-size: 0.85rem; text-transform: uppercase; margin-bottom: 8px; }
+    .hud-val { color: #fff; text-shadow: 0 0 10px var(--neon-blue); }
+    #streak.hot { color: var(--gold); text-shadow: 0 0 12px var(--gold); }
+
+    /* timer bar */
+    #timer-track { height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px;
+        overflow: hidden; margin-bottom: 22px; }
+    #timer-fill { height: 100%; width: 100%; background: var(--neon-blue);
+        box-shadow: 0 0 12px var(--neon-blue); transition: width 0.1s linear; }
+
+    /* prompt */
+    #prompt-label { text-align: center; font-size: 0.8rem; letter-spacing: 2px;
+        text-transform: uppercase; opacity: 0.7; margin-bottom: 8px; }
+    #prompt { text-align: center; margin-bottom: 26px; }
+    #prompt .flag { font-size: 6rem; line-height: 1; filter: drop-shadow(0 0 14px rgba(0,242,255,0.5)); }
+    #prompt .text { font-size: 2rem; color: #fff; font-weight: 700; text-shadow: 0 0 16px var(--neon-blue); }
+
+    /* answers */
+    #answers { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .answer {
+        background: rgba(0,242,255,0.06); color: var(--neon-blue);
+        border: 2px solid rgba(0,242,255,0.45); border-radius: 12px;
+        padding: 18px 14px; font-family: 'Orbitron'; font-size: 1rem; font-weight: 700;
+        cursor: pointer; transition: 0.15s; text-align: center; min-height: 64px;
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .answer .num { opacity: 0.5; font-size: 0.8rem; }
+    .answer:hover:not(:disabled) { background: var(--neon-blue); color: #000; box-shadow: 0 0 24px var(--neon-blue); }
+    .answer:disabled { cursor: default; }
+    .answer.correct { background: var(--green); color: #000; border-color: var(--green); box-shadow: 0 0 26px var(--green); }
+    .answer.wrong { background: var(--red); color: #fff; border-color: var(--red); box-shadow: 0 0 26px var(--red); }
+    .answer.dim { opacity: 0.35; }
+
+    /* mode buttons + generic buttons */
+    .btn {
+        display: block; width: 100%; background: transparent; color: var(--neon-blue);
+        border: 2px solid var(--neon-blue); border-radius: 12px; padding: 16px;
+        font-family: 'Orbitron'; font-size: 1.1rem; font-weight: 700; cursor: pointer;
+        transition: 0.2s; margin-top: 14px; text-transform: uppercase; letter-spacing: 1px;
+    }
+    .btn:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    .btn small { display: block; font-size: 0.7rem; opacity: 0.7; font-weight: 400; margin-top: 4px; }
+
+    /* result screen */
+    #result h1 { margin-bottom: 6px; }
+    .grade { font-size: 5rem; font-weight: 900; text-align: center; margin: 10px 0; }
+    .score-line { text-align: center; font-size: 1.1rem; color: #fff; margin-bottom: 6px; }
+    .score-line span { color: var(--gold); text-shadow: 0 0 12px var(--gold); }
+    .stat-row { display: flex; justify-content: space-around; margin: 22px 0;
+        text-align: center; font-size: 0.8rem; text-transform: uppercase; opacity: 0.85; }
+    .stat-row .v { display: block; font-size: 1.6rem; color: #fff; margin-top: 4px; }
+
+    .footnote { text-align: center; font-size: 0.7rem; opacity: 0.5; margin-top: 18px; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+    <!-- ============ TITLE / MODE SELECT ============ -->
+    <section id="menu">
+        <h1>GLOBE TREKKER</h1>
+        <p class="sub">Neon Geography Quiz</p>
+        <button class="btn" data-mode="flag">Flags<small>See the flag &middot; name the country</small></button>
+        <button class="btn" data-mode="capital">Capitals<small>See the country &middot; name the capital</small></button>
+        <button class="btn" data-mode="mixed">Mixed<small>Everything, all at once</small></button>
+        <p class="footnote">10 QUESTIONS &middot; BEAT THE CLOCK &middot; KEYS 1-4 TO ANSWER</p>
+    </section>
+
+    <!-- ============ QUIZ ============ -->
+    <section id="quiz" class="hidden">
+        <div id="hud">
+            <span>Q <span id="q-num" class="hud-val">1</span>/<span id="q-total" class="hud-val">10</span></span>
+            <span id="streak">Streak: <span id="streak-val" class="hud-val">0</span></span>
+            <span>Score: <span id="score-val" class="hud-val">0</span></span>
+        </div>
+        <div id="timer-track"><div id="timer-fill"></div></div>
+        <p id="prompt-label">Which country?</p>
+        <div id="prompt"></div>
+        <div id="answers"></div>
+    </section>
+
+    <!-- ============ RESULT ============ -->
+    <section id="result" class="hidden">
+        <h1>MISSION COMPLETE</h1>
+        <p class="sub" id="result-mode">Flags Mode</p>
+        <div class="grade" id="grade">A</div>
+        <p class="score-line">SCORE <span id="final-score">0</span></p>
+        <div class="stat-row">
+            <div>Correct<span class="v" id="final-correct">0/10</span></div>
+            <div>Best Streak<span class="v" id="final-streak">0</span></div>
+            <div>Accuracy<span class="v" id="final-acc">0%</span></div>
+        </div>
+        <button class="btn" id="again-btn">Play Again</button>
+        <button class="btn" id="menu-btn">Main Menu</button>
+    </section>
+
+</div>
+
+<script>
+// ---------------- data ----------------
+const COUNTRIES = [
+    { n: "France", c: "Paris", f: "🇫🇷" },
+    { n: "Japan", c: "Tokyo", f: "🇯🇵" },
+    { n: "Brazil", c: "Brasília", f: "🇧🇷" },
+    { n: "Canada", c: "Ottawa", f: "🇨🇦" },
+    { n: "Egypt", c: "Cairo", f: "🇪🇬" },
+    { n: "Australia", c: "Canberra", f: "🇦🇺" },
+    { n: "Germany", c: "Berlin", f: "🇩🇪" },
+    { n: "India", c: "New Delhi", f: "🇮🇳" },
+    { n: "Italy", c: "Rome", f: "🇮🇹" },
+    { n: "Spain", c: "Madrid", f: "🇪🇸" },
+    { n: "Mexico", c: "Mexico City", f: "🇲🇽" },
+    { n: "Argentina", c: "Buenos Aires", f: "🇦🇷" },
+    { n: "Russia", c: "Moscow", f: "🇷🇺" },
+    { n: "China", c: "Beijing", f: "🇨🇳" },
+    { n: "South Korea", c: "Seoul", f: "🇰🇷" },
+    { n: "Greece", c: "Athens", f: "🇬🇷" },
+    { n: "Portugal", c: "Lisbon", f: "🇵🇹" },
+    { n: "Netherlands", c: "Amsterdam", f: "🇳🇱" },
+    { n: "Sweden", c: "Stockholm", f: "🇸🇪" },
+    { n: "Norway", c: "Oslo", f: "🇳🇴" },
+    { n: "Poland", c: "Warsaw", f: "🇵🇱" },
+    { n: "Turkey", c: "Ankara", f: "🇹🇷" },
+    { n: "Thailand", c: "Bangkok", f: "🇹🇭" },
+    { n: "Vietnam", c: "Hanoi", f: "🇻🇳" },
+    { n: "Kenya", c: "Nairobi", f: "🇰🇪" },
+    { n: "Nigeria", c: "Abuja", f: "🇳🇬" },
+    { n: "South Africa", c: "Pretoria", f: "🇿🇦" },
+    { n: "Morocco", c: "Rabat", f: "🇲🇦" },
+    { n: "Chile", c: "Santiago", f: "🇨🇱" },
+    { n: "Peru", c: "Lima", f: "🇵🇪" },
+    { n: "Colombia", c: "Bogotá", f: "🇨🇴" },
+    { n: "Switzerland", c: "Bern", f: "🇨🇭" },
+    { n: "Austria", c: "Vienna", f: "🇦🇹" },
+    { n: "Ireland", c: "Dublin", f: "🇮🇪" },
+    { n: "Finland", c: "Helsinki", f: "🇫🇮" },
+    { n: "Denmark", c: "Copenhagen", f: "🇩🇰" },
+    { n: "Belgium", c: "Brussels", f: "🇧🇪" },
+    { n: "Indonesia", c: "Jakarta", f: "🇮🇩" },
+    { n: "Saudi Arabia", c: "Riyadh", f: "🇸🇦" },
+    { n: "United Kingdom", c: "London", f: "🇬🇧" },
+    { n: "United States", c: "Washington, D.C.", f: "🇺🇸" },
+    { n: "New Zealand", c: "Wellington", f: "🇳🇿" },
+    { n: "Iceland", c: "Reykjavík", f: "🇮🇸" },
+    { n: "Cuba", c: "Havana", f: "🇨🇺" },
+    { n: "Hungary", c: "Budapest", f: "🇭🇺" },
+    { n: "Czechia", c: "Prague", f: "🇨🇿" },
+    { n: "Ukraine", c: "Kyiv", f: "🇺🇦" },
+    { n: "Pakistan", c: "Islamabad", f: "🇵🇰" },
+    { n: "Philippines", c: "Manila", f: "🇵🇭" },
+    { n: "Ethiopia", c: "Addis Ababa", f: "🇪🇹" },
+];
+
+const Q_PER_ROUND = 10;
+const TIME_PER_Q = 15;       // seconds
+const BASE_POINTS = 100;
+
+// ---------------- elements ----------------
+const $ = id => document.getElementById(id);
+const menuEl = $("menu"), quizEl = $("quiz"), resultEl = $("result");
+const promptEl = $("prompt"), promptLabel = $("prompt-label"), answersEl = $("answers");
+const timerFill = $("timer-fill");
+
+// ---------------- state ----------------
+let mode = "flag", deck = [], qIndex = 0, score = 0, streak = 0, bestStreak = 0, correctCount = 0;
+let timeLeft = 0, timerId = null, locked = false, currentQ = null;
+
+const shuffle = arr => {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+};
+
+// ---------------- flow ----------------
+function startGame(selectedMode) {
+    mode = selectedMode;
+    deck = shuffle(COUNTRIES).slice(0, Q_PER_ROUND);
+    qIndex = 0; score = 0; streak = 0; bestStreak = 0; correctCount = 0;
+    menuEl.classList.add("hidden");
+    resultEl.classList.add("hidden");
+    quizEl.classList.remove("hidden");
+    $("q-total").textContent = Q_PER_ROUND;
+    nextQuestion();
+}
+
+function nextQuestion() {
+    if (qIndex >= deck.length) { endGame(); return; }
+    locked = false;
+    const country = deck[qIndex];
+    // resolve this question's type (mixed picks randomly each time)
+    const qType = mode === "mixed" ? (Math.random() < 0.5 ? "flag" : "capital") : mode;
+    currentQ = buildQuestion(country, qType);
+
+    $("q-num").textContent = qIndex + 1;
+    $("streak-val").textContent = streak;
+    $("score-val").textContent = score;
+    $("streak").classList.toggle("hot", streak >= 3);
+
+    promptLabel.textContent = currentQ.label;
+    promptEl.innerHTML = currentQ.promptHTML;
+
+    answersEl.innerHTML = "";
+    currentQ.options.forEach((opt, i) => {
+        const btn = document.createElement("button");
+        btn.className = "answer";
+        btn.innerHTML = `<span class="num">${i + 1}</span> ${opt}`;
+        btn.addEventListener("click", () => choose(opt, btn));
+        answersEl.appendChild(btn);
+    });
+
+    startTimer();
+}
+
+function buildQuestion(country, qType) {
+    if (qType === "flag") {
+        // show flag, pick country name
+        const answer = country.n;
+        const distractors = shuffle(COUNTRIES.filter(c => c.n !== answer)).slice(0, 3).map(c => c.n);
+        return {
+            type: "flag",
+            label: "Which country?",
+            promptHTML: `<span class="flag">${country.f}</span>`,
+            answer,
+            options: shuffle([answer, ...distractors]),
+        };
+    } else {
+        // show country, pick capital
+        const answer = country.c;
+        const distractors = shuffle(COUNTRIES.filter(c => c.c !== answer)).slice(0, 3).map(c => c.c);
+        return {
+            type: "capital",
+            label: "What is the capital?",
+            promptHTML: `<span class="text">${country.f} ${country.n}</span>`,
+            answer,
+            options: shuffle([answer, ...distractors]),
+        };
+    }
+}
+
+function startTimer() {
+    timeLeft = TIME_PER_Q;
+    timerFill.style.width = "100%";
+    timerFill.style.background = "var(--neon-blue)";
+    clearInterval(timerId);
+    const tick = 0.05;
+    timerId = setInterval(() => {
+        timeLeft -= tick;
+        const pct = Math.max(0, timeLeft / TIME_PER_Q) * 100;
+        timerFill.style.width = pct + "%";
+        if (pct < 33) timerFill.style.background = "var(--red)";
+        else if (pct < 60) timerFill.style.background = "var(--gold)";
+        if (timeLeft <= 0) { clearInterval(timerId); timeOut(); }
+    }, tick * 1000);
+}
+
+function choose(opt, btn) {
+    if (locked) return;
+    locked = true;
+    clearInterval(timerId);
+    const correct = opt === currentQ.answer;
+    revealAnswer(btn, correct);
+
+    if (correct) {
+        correctCount++;
+        streak++;
+        bestStreak = Math.max(bestStreak, streak);
+        // points: base + time bonus + streak bonus
+        const timeBonus = Math.round((timeLeft / TIME_PER_Q) * BASE_POINTS);
+        const streakBonus = (streak - 1) * 25;
+        score += BASE_POINTS + timeBonus + streakBonus;
+    } else {
+        streak = 0;
+    }
+    $("score-val").textContent = score;
+    setTimeout(advance, 1200);
+}
+
+function timeOut() {
+    if (locked) return;
+    locked = true;
+    streak = 0;
+    revealAnswer(null, false);
+    setTimeout(advance, 1200);
+}
+
+function revealAnswer(chosenBtn, correct) {
+    [...answersEl.children].forEach(b => {
+        b.disabled = true;
+        const label = b.textContent.replace(/^\s*\d\s*/, "").trim();
+        if (label === currentQ.answer) b.classList.add("correct");
+        else b.classList.add("dim");
+    });
+    if (chosenBtn && !correct) {
+        chosenBtn.classList.remove("dim");
+        chosenBtn.classList.add("wrong");
+    }
+}
+
+function advance() {
+    qIndex++;
+    nextQuestion();
+}
+
+function endGame() {
+    clearInterval(timerId);
+    quizEl.classList.add("hidden");
+    resultEl.classList.remove("hidden");
+    const acc = Math.round((correctCount / Q_PER_ROUND) * 100);
+    const grades = [
+        { min: 100, g: "S", t: "FLAWLESS!" },
+        { min: 90, g: "A", t: "GEOGRAPHY ACE" },
+        { min: 70, g: "B", t: "WELL TRAVELED" },
+        { min: 50, g: "C", t: "GETTING THERE" },
+        { min: 0, g: "D", t: "PACK A MAP" },
+    ];
+    const grade = grades.find(x => acc >= x.min);
+    $("result-mode").textContent = mode.charAt(0).toUpperCase() + mode.slice(1) + " Mode";
+    $("grade").textContent = grade.g;
+    $("grade").style.color = acc >= 90 ? "var(--gold)" : acc >= 50 ? "var(--neon-blue)" : "var(--red)";
+    $("grade").style.textShadow = "0 0 25px currentColor";
+    document.querySelector("#result h1").textContent = grade.t;
+    $("final-score").textContent = score;
+    $("final-correct").textContent = correctCount + "/" + Q_PER_ROUND;
+    $("final-streak").textContent = bestStreak;
+    $("final-acc").textContent = acc + "%";
+}
+
+// ---------------- input ----------------
+document.querySelectorAll("[data-mode]").forEach(b =>
+    b.addEventListener("click", () => startGame(b.dataset.mode)));
+$("again-btn").addEventListener("click", () => startGame(mode));
+$("menu-btn").addEventListener("click", () => {
+    resultEl.classList.add("hidden");
+    menuEl.classList.remove("hidden");
+});
+
+window.addEventListener("keydown", e => {
+    if (quizEl.classList.contains("hidden") || locked) return;
+    const idx = parseInt(e.key, 10) - 1;
+    if (idx >= 0 && idx < answersEl.children.length) {
+        const btn = answersEl.children[idx];
+        const label = btn.textContent.replace(/^\s*\d\s*/, "").trim();
+        choose(label, btn);
+    }
+});
+</script>
+</body>
+</html>
