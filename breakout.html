@@ -336,6 +336,7 @@ function draw() {
 window.addEventListener("keydown", e => {
     if (e.key in keys) keys[e.key] = true;
     if (e.key === "Shift") altMode = true;
+    if (e.key === "Alt") e.preventDefault();
     if (e.key === " ") {
         shiftMode = !shiftMode;
         e.preventDefault();
