@@ -62,12 +62,15 @@ const startBtn = document.getElementById("start-btn");
 const statusMsg = document.getElementById("status-msg");
 
 let audioCtx;
-let shiftMode = false;
-let altMode = false;
+let shiftHeld = false;   // is SHIFT physically held (for tilt + resize)
+let powerMode = false;   // toggled by SPACE: multi-drop powerups + balls persist after bonus
 let breakCount = 0;
 let bonusTimeout;
 let speedMult = 1;
 const INIT_WIDTH = 130;
+const PADDLE_Y = 577;        // vertical center of the paddle
+const PADDLE_THICK = 15;
+const MAX_ANGLE = 0.6;       // ~34 degrees of tilt each way
 
 // Input tracking engine
 const keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false, Control: false };
@@ -78,7 +81,17 @@ let game = {
     balls: [], bricks: [], powerUps: [] 
 };
 
-const paddle = { x: 335, width: 130, height: 15, dx: 0, speed: 14 };
+const paddle = { x: 335, width: 130, height: 15, dx: 0, speed: 14, angle: 0 };
+
+// shortest distance from a point to the (tilted) paddle bar
+function paddleDist(px, py) {
+    const cx = paddle.x + paddle.width / 2, cy = PADDLE_Y;
+    const cos = Math.cos(paddle.angle), sin = Math.sin(paddle.angle);
+    const half = paddle.width / 2;
+    let t = (px - cx) * cos + (py - cy) * sin;
+    t = Math.max(-half, Math.min(half, t));
+    return Math.hypot(px - (cx + t * cos), py - (cy + t * sin));
+}
 
 let rafId = null;
 function scheduleFrame() {
@@ -132,19 +145,29 @@ class Ball {
         if(this.x <= 8 || this.x >= 792) { this.dx *= -1; playSound(220, 0.1); game.shake = 3; }
         if(this.y <= 8) { this.dy *= -1; playSound(300, 0.1); }
         
-        if (!shiftMode) {
-            if (this.y > 560 && this.y < 580 && this.x > paddle.x && this.x < paddle.x + paddle.width) {
-                this.dy = -Math.abs(this.dy);
-                this.dx = ((this.x - (paddle.x + paddle.width/2)) / (paddle.width/2)) * 9;
-                playSound(150, 0.2);
-            }
-        } else {
-            const pX = paddle.x + 57;
-            const pTop = 520 - paddle.width / 2, pH = paddle.width;
-            if (this.y > pTop - 5 && this.y < pTop + pH && this.x > pX - 8 && this.x < pX + 23) {
-                this.dx = this.x < (pX + 7.5) ? -Math.abs(this.dx) : Math.abs(this.dx);
-                this.dy = ((this.y - (pTop + pH / 2)) / (pH / 2)) * 9;
-                if (Math.abs(this.dy) < 2) this.dy = this.dy < 0 ? -3 : 3;
+        // --- paddle collision (reflects off the tilted bar) ---
+        const cx = paddle.x + paddle.width / 2, cy = PADDLE_Y;
+        const cos = Math.cos(paddle.angle), sin = Math.sin(paddle.angle);
+        const half = paddle.width / 2;
+        let t = (this.x - cx) * cos + (this.y - cy) * sin;     // distance along paddle
+        t = Math.max(-half, Math.min(half, t));
+        const closeX = cx + t * cos, closeY = cy + t * sin;     // nearest point on bar
+        const ddx = this.x - closeX, ddy = this.y - closeY;
+        const dist = Math.hypot(ddx, ddy);
+        if (dist < this.radius + PADDLE_THICK / 2) {
+            // surface normal, flipped to point toward the ball's side
+            let nx = sin, ny = -cos;
+            if (ddx * nx + ddy * ny < 0) { nx = -nx; ny = -ny; }
+            const vdotn = this.dx * nx + this.dy * ny;
+            if (vdotn < 0) {                                    // moving into the paddle
+                this.dx -= 2 * vdotn * nx;                      // reflect
+                this.dy -= 2 * vdotn * ny;
+                this.dx += (t / half) * 4;                      // english from hit position
+                const overlap = (this.radius + PADDLE_THICK / 2) - dist;
+                this.x += nx * overlap; this.y += ny * overlap; // push out of paddle
+                const sp = Math.hypot(this.dx, this.dy);
+                if (sp > 13) { this.dx = this.dx / sp * 13; this.dy = this.dy / sp * 13; }
+                if (this.dy > -2) this.dy = -2;                 // always clear the paddle upward
                 playSound(150, 0.2);
             }
         }
@@ -181,8 +204,8 @@ function endBonus() {
     statusMsg.style.display = "none";
     game.level++;
     
-    // Controlled via holding down the Alt Key
-    if (!altMode) {
+    // When power mode is on, balls surviving the bonus round carry over
+    if (!powerMode) {
         game.balls = [new Ball(400, 500)];
     } else if (game.balls.length === 0) {
         game.balls = [new Ball(400, 500)];
@@ -211,18 +234,19 @@ function gameLoop() {
     if(game.shake > 0) game.shake *= 0.9;
 
     paddle.dx = 0;
-    if (!keys.Control) {
+    if (shiftHeld) {
+        // SHIFT + Up/Down resizes, SHIFT + Left/Right tilts
+        if (keys.ArrowUp) paddle.width = Math.min(paddle.width + 2, 400);
+        if (keys.ArrowDown) paddle.width = Math.max(paddle.width - 2, 20);
+        if (keys.ArrowLeft) paddle.angle = Math.max(paddle.angle - 0.04, -MAX_ANGLE);
+        if (keys.ArrowRight) paddle.angle = Math.min(paddle.angle + 0.04, MAX_ANGLE);
+    } else if (!keys.Control) {
         if (keys.ArrowLeft) paddle.dx = -paddle.speed;
         if (keys.ArrowRight) paddle.dx = paddle.speed;
     }
-    
-    if (altMode) {
-        if (keys.ArrowUp) paddle.width = Math.min(paddle.width + 2, 400);
-        if (keys.ArrowDown) paddle.width = Math.max(paddle.width - 2, 20);
-    }
 
     paddle.x += paddle.dx;
-    paddle.x = Math.max(0, Math.min(shiftMode ? 800 - 72 : 800 - paddle.width, paddle.x));
+    paddle.x = Math.max(0, Math.min(800 - paddle.width, paddle.x));
 
     for (let bi = game.balls.length - 1; bi >= 0; bi--) {
         const b = game.balls[bi];
@@ -237,8 +261,8 @@ function gameLoop() {
                 playSound(440 + (bi * 50), 0.05);
 
                 if(!game.isBonus) {
-                    // Multi-drop functionality controlled via holding down the Alt Key
-                    if (altMode) {
+                    // Multi-drop functionality controlled by power mode (SPACE toggle)
+                    if (powerMode) {
                         breakCount++;
                         if (breakCount % 2 === 0) {
                             game.powerUps.push({x: br.x+30, y: br.y, type: 'MULTI', dy: 3.5});
@@ -285,11 +309,7 @@ function gameLoop() {
         const p = game.powerUps[i];
         p.y += p.dy * speedMult;
 
-        const pr = shiftMode
-            ? { left: paddle.x + 57, right: paddle.x + 72, top: 520 - paddle.width / 2, bottom: 520 + paddle.width / 2 }
-            : { left: paddle.x, right: paddle.x + paddle.width, top: 570, bottom: 585 };
-
-        if(p.x >= pr.left && p.x <= pr.right && p.y >= pr.top && p.y <= pr.bottom) {
+        if(paddleDist(p.x, p.y) < 18) {
             if(p.type === 'MULTI') {
                 game.balls.push(new Ball(paddle.x, 550, -6, -5));
                 game.balls.push(new Ball(paddle.x + paddle.width, 550, 6, -5));
@@ -326,12 +346,16 @@ function draw() {
     
     ctx.shadowBlur = 0;
     
-    const pRect = shiftMode ? { x: paddle.x + 57, y: 520 - paddle.width / 2, w: 15, h: paddle.width } : { x: paddle.x, y: 570, w: paddle.width, h: 15 };
-    
+    ctx.save();
+    ctx.translate(paddle.x + paddle.width / 2, PADDLE_Y);
+    ctx.rotate(paddle.angle);
     ctx.fillStyle = "#000044";
-    ctx.fillRect(pRect.x, pRect.y, pRect.w, pRect.h);
+    ctx.fillRect(-paddle.width / 2, -PADDLE_THICK / 2, paddle.width, PADDLE_THICK);
     ctx.strokeStyle = "#00f2ff";
-    ctx.strokeRect(pRect.x, pRect.y, pRect.w, pRect.h);
+    ctx.shadowBlur = 10; ctx.shadowColor = "#00f2ff";
+    ctx.strokeRect(-paddle.width / 2, -PADDLE_THICK / 2, paddle.width, PADDLE_THICK);
+    ctx.restore();
+    ctx.shadowBlur = 0;
 
     game.balls.forEach(b => {
         ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2);
@@ -356,10 +380,10 @@ function draw() {
 
 window.addEventListener("keydown", e => {
     if (e.key in keys) keys[e.key] = true;
-    if (e.key === "Shift") altMode = true;
+    if (e.key === "Shift") shiftHeld = true;
     if (e.key === "Alt") e.preventDefault();
     if (e.key === " ") {
-        shiftMode = !shiftMode;
+        powerMode = !powerMode;
         e.preventDefault();
     }
 
@@ -367,7 +391,7 @@ window.addEventListener("keydown", e => {
     if (e.key === "-" || e.key === "_") speedMult = Math.max(speedMult - 0.1, 0.2);
     if (e.key === "0") {
         speedMult = 1;
-        shiftMode = false;
+        paddle.angle = 0;
         paddle.width = INIT_WIDTH;
     }
     
@@ -382,7 +406,7 @@ window.addEventListener("keydown", e => {
 
 window.addEventListener("keyup", e => {
     if (e.key in keys) keys[e.key] = false;
-    if (e.key === "Shift") altMode = false;
+    if (e.key === "Shift") shiftHeld = false;
 });
 
 draw();
