@@ -131,11 +131,12 @@ class Ball {
                 playSound(150, 0.2);
             }
         } else {
-            const pX = paddle.x + 57; 
-            if (this.y > 450 && this.y < 585 && this.x > pX - 8 && this.x < pX + 23) {
+            const pX = paddle.x + 57;
+            const pTop = 455, pH = paddle.width;
+            if (this.y > pTop - 5 && this.y < pTop + pH && this.x > pX - 8 && this.x < pX + 23) {
                 this.dx = this.x < (pX + 7.5) ? -Math.abs(this.dx) : Math.abs(this.dx);
-                this.dy = ((this.y - (455 + 65)) / 65) * 9;
-                if (Math.abs(this.dy) < 2) this.dy = this.dy < 0 ? -3 : 3; 
+                this.dy = ((this.y - (pTop + pH / 2)) / (pH / 2)) * 9;
+                if (Math.abs(this.dy) < 2) this.dy = this.dy < 0 ? -3 : 3;
                 playSound(150, 0.2);
             }
         }
@@ -310,7 +311,7 @@ function draw() {
     
     ctx.shadowBlur = 0;
     
-    const pRect = shiftMode ? { x: paddle.x + 57, y: 455, w: 15, h: 130 } : { x: paddle.x, y: 570, w: paddle.width, h: 15 };
+    const pRect = shiftMode ? { x: paddle.x + 57, y: 455, w: 15, h: paddle.width } : { x: paddle.x, y: 570, w: paddle.width, h: 15 };
     
     ctx.fillStyle = "#000044";
     ctx.fillRect(pRect.x, pRect.y, pRect.w, pRect.h);
