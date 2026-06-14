@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plan Your Day</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --border: #334155;
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --accent: #818cf8;
+            --accent-dark: #4f46e5;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 32px 16px 80px;
+        }
+        .container { max-width: 660px; margin: 0 auto; }
+
+        .steps { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:44px; }
+        .step-dot { width:10px; height:10px; border-radius:50%; background:var(--border); transition:all .3s; }
+        .step-dot.active { background:var(--accent); transform:scale(1.4); }
+        .step-dot.done   { background:#22c55e; }
+        .step-line { flex:1; max-width:80px; height:2px; background:var(--border); }
+
+        .page-title { font-size:26px; font-weight:700; margin-bottom:6px; }
+        .page-sub   { color:var(--muted); margin-bottom:28px; font-size:15px; }
+
+        .step-panel        { display:none; }
+        .step-panel.active { display:block; }
+
+        .input {
+            background:var(--surface); border:1.5px solid var(--border);
+            border-radius:10px; padding:10px 14px; color:var(--text);
+            font-size:15px; outline:none; transition:border-color .2s; width:100%;
+        }
+        .input:focus { border-color:var(--accent); }
+
+        .chip-group { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:14px; }
+        .chip {
+            padding:6px 14px; border-radius:20px;
+            border:1.5px solid var(--border); background:transparent;
+            color:var(--muted); font-size:13px; cursor:pointer; transition:all .2s;
+        }
+        .chip:hover,.chip.sel { border-color:var(--accent); color:var(--accent); background:rgba(129,140,248,.1); }
+
+        .pri-group { display:flex; gap:8px; margin-bottom:18px; }
+        .pri-btn {
+            flex:1; padding:9px 8px; border-radius:9px;
+            border:1.5px solid var(--border); background:transparent;
+            color:var(--muted); font-size:13px; cursor:pointer; transition:all .2s; text-align:center;
+        }
+        .pri-btn[data-p="high"].sel   { border-color:#ef4444; color:#ef4444; background:rgba(239,68,68,.1); }
+        .pri-btn[data-p="medium"].sel { border-color:#f59e0b; color:#f59e0b; background:rgba(245,158,11,.1); }
+        .pri-btn[data-p="low"].sel    { border-color:#22c55e; color:#22c55e; background:rgba(34,197,94,.1); }
+
+        .btn-add {
+            width:100%; padding:12px; border-radius:10px;
+            border:2px dashed var(--border); background:transparent;
+            color:var(--muted); font-size:15px; cursor:pointer; transition:all .2s; margin-bottom:20px;
+        }
+        .btn-add:hover { border-color:var(--accent); color:var(--accent); }
+
+        .task-list { display:flex; flex-direction:column; gap:8px; margin-bottom:24px; }
+        .task-card {
+            background:var(--surface); border-radius:10px; padding:12px 16px;
+            display:flex; align-items:center; gap:12px; border-left:3px solid;
+            animation:slideIn .2s ease;
+        }
+        @keyframes slideIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+        .task-card[data-p="high"]   { border-color:#ef4444; }
+        .task-card[data-p="medium"] { border-color:#f59e0b; }
+        .task-card[data-p="low"]    { border-color:#22c55e; }
+        .task-card-name { flex:1; font-weight:500; }
+        .task-card-meta { font-size:13px; color:var(--muted); }
+        .btn-del {
+            background:none; border:none; color:var(--muted);
+            cursor:pointer; font-size:20px; padding:2px 6px; border-radius:4px; line-height:1; transition:all .15s;
+        }
+        .btn-del:hover { color:#ef4444; background:rgba(239,68,68,.1); }
+
+        .form-group { margin-bottom:26px; }
+        .form-label { font-size:15px; font-weight:600; margin-bottom:10px; display:block; }
+        .form-sub   { font-size:13px; color:var(--muted); margin-bottom:10px; display:block; }
+
+        .time-row  { display:flex; gap:14px; }
+        .time-group { flex:1; }
+        .time-label { font-size:12px; color:var(--muted); margin-bottom:5px; }
+
+        .radio-group { display:flex; flex-direction:column; gap:8px; }
+        .radio-opt {
+            display:flex; align-items:center; gap:12px; padding:11px 14px;
+            border-radius:10px; border:1.5px solid var(--border); cursor:pointer; transition:all .2s;
+        }
+        .radio-opt:hover,.radio-opt.sel { border-color:var(--accent); background:rgba(129,140,248,.07); }
+        .radio-opt input { display:none; }
+        .radio-icon { font-size:18px; }
+        .radio-text { font-size:14px; font-weight:500; }
+        .radio-sub  { font-size:12px; color:var(--muted); }
+
+        .toggle-row {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:12px 16px; background:var(--surface); border-radius:10px; cursor:pointer;
+        }
+        .toggle {
+            width:44px; height:24px; border-radius:12px; background:var(--border);
+            position:relative; transition:background .2s; flex-shrink:0;
+        }
+        .toggle.on { background:var(--accent); }
+        .toggle::after {
+            content:''; position:absolute; width:18px; height:18px;
+            border-radius:50%; background:white; top:3px; left:3px; transition:left .2s;
+        }
+        .toggle.on::after { left:23px; }
+
+        .meal-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:12px; }
+        .meal-grid label { font-size:12px; color:var(--muted); display:block; margin-bottom:4px; }
+
+        .btn-primary {
+            width:100%; padding:14px; border-radius:12px; border:none;
+            background:var(--accent-dark); color:white; font-size:16px; font-weight:600;
+            cursor:pointer; transition:all .2s; margin-top:4px;
+        }
+        .btn-primary:hover { background:var(--accent); transform:translateY(-1px); }
+        .btn-outline {
+            padding:9px 18px; border-radius:9px; border:1.5px solid var(--border);
+            background:transparent; color:var(--muted); font-size:14px; cursor:pointer; transition:all .2s;
+        }
+        .btn-outline:hover { border-color:var(--accent); color:var(--accent); }
+
+        .error { color:#ef4444; font-size:13px; margin-top:8px; display:none; }
+        .error.show { display:block; }
+        .empty { text-align:center; padding:32px; color:var(--muted); }
+
+        /* Schedule */
+        .sched-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:20px; gap:16px; }
+        .stats-row { display:flex; gap:10px; margin-bottom:28px; }
+        .stat-card { flex:1; background:var(--surface); border-radius:10px; padding:14px; text-align:center; }
+        .stat-num  { font-size:22px; font-weight:700; color:var(--accent); }
+        .stat-lbl  { font-size:11px; color:var(--muted); margin-top:3px; }
+
+        .timeline { display:flex; flex-direction:column; }
+        .tl-block  { display:flex; gap:14px; padding-bottom:14px; position:relative; }
+        .tl-block::before {
+            content:''; position:absolute; left:54px; top:22px; bottom:0;
+            width:2px; background:var(--border);
+        }
+        .tl-block:last-child::before { display:none; }
+        .tl-time { width:54px; text-align:right; font-size:12px; color:var(--muted); padding-top:5px; flex-shrink:0; }
+        .tl-dot  { width:12px; height:12px; border-radius:50%; flex-shrink:0; margin-top:6px; z-index:1; }
+        .tl-card { flex:1; border-radius:10px; padding:10px 14px; border-left:3px solid; }
+        .tl-card-title { font-weight:600; font-size:14px; margin-bottom:2px; }
+        .tl-card-meta  { font-size:12px; color:var(--muted); }
+
+        .c-high   { background:rgba(239,68,68,.1);   border-color:#ef4444; }
+        .c-medium { background:rgba(245,158,11,.1);  border-color:#f59e0b; }
+        .c-low    { background:rgba(34,197,94,.1);   border-color:#22c55e; }
+        .c-meal   { background:rgba(14,165,233,.1);  border-color:#0ea5e9; }
+        .c-break  { background:rgba(71,85,105,.25);  border-color:#64748b; }
+        .c-fixed  { background:rgba(168,85,247,.1);  border-color:#a855f7; }
+        .c-free   { background:rgba(100,116,139,.1); border-color:#475569; }
+        .d-high   { background:#ef4444; } .d-medium { background:#f59e0b; } .d-low  { background:#22c55e; }
+        .d-meal   { background:#0ea5e9; } .d-break  { background:#64748b; } .d-fixed{ background:#a855f7; }
+        .d-free   { background:#475569; }
+
+        .warn-box {
+            margin-top:16px; padding:14px; background:rgba(245,158,11,.1);
+            border-radius:10px; border-left:3px solid #f59e0b;
+        }
+        .warn-box strong { display:block; margin-bottom:4px; }
+        .warn-box span   { font-size:13px; color:var(--muted); }
+
+        .peak-hint {
+            margin-top:10px; padding:10px 14px; background:rgba(129,140,248,.08);
+            border-radius:8px; font-size:13px; color:var(--muted); border-left:3px solid var(--accent);
+        }
+        #sitenav{position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(15,23,42,.9);backdrop-filter:blur(4px);border-bottom:1px solid #1e293b;}
+        #sitenav a{color:#64748b;text-decoration:none;font-size:12px;padding:3px 9px;border-radius:5px;border:1px solid #334155;transition:all .15s;}
+        #sitenav a:hover{color:#818cf8;border-color:#818cf8;}
+        #sitenav a.active{color:#818cf8;border-color:#818cf8;}
+        body{padding-top:44px;}
+    </style>
+</head>
+<body>
+<nav id="sitenav">
+  <a href="index.html">🏠 Home</a>
+  <a href="kart.html">🏎️ Kart Dash</a>
+  <a href="race.html">🚗 Race</a>
+  <a href="schedule.html" class="active">📋 Planner</a>
+</nav>
+<div class="container">
+
+    <div class="steps">
+        <div class="step-dot active" id="dot1"></div>
+        <div class="step-line"></div>
+        <div class="step-dot" id="dot2"></div>
+        <div class="step-line"></div>
+        <div class="step-dot" id="dot3"></div>
+    </div>
+
+    <!-- Step 1 ─────────────────────────────────── -->
+    <div class="step-panel active" id="step1">
+        <div class="page-title">What's on your plate today?</div>
+        <p class="page-sub">Add everything you need or want to do — big or small.</p>
+
+        <input type="text" class="input" id="taskName" placeholder="e.g. Finish project report…" style="margin-bottom:12px;" />
+
+        <div style="font-size:13px;color:var(--muted);margin-bottom:7px;">How long will it take?</div>
+        <div class="chip-group" id="durGroup">
+            <button class="chip" data-min="15">15 min</button>
+            <button class="chip" data-min="30">30 min</button>
+            <button class="chip sel" data-min="60">1 hour</button>
+            <button class="chip" data-min="90">1.5 hrs</button>
+            <button class="chip" data-min="120">2 hours</button>
+            <button class="chip" data-min="custom">Custom…</button>
+        </div>
+        <div id="customWrap" style="display:none;margin-bottom:12px;">
+            <input type="number" class="input" id="customMin" placeholder="Minutes" min="5" max="600" style="width:140px;" />
+        </div>
+
+        <div style="font-size:13px;color:var(--muted);margin-bottom:7px;">Priority</div>
+        <div class="pri-group">
+            <button class="pri-btn" data-p="high">🔴 High</button>
+            <button class="pri-btn sel" data-p="medium">🟡 Medium</button>
+            <button class="pri-btn" data-p="low">🟢 Low</button>
+        </div>
+
+        <button class="btn-add" id="addTaskBtn">+ Add Task</button>
+        <div class="task-list" id="taskList"><div class="empty">No tasks yet — add one above</div></div>
+        <p class="error" id="err1">Add at least one task to continue.</p>
+        <button class="btn-primary" id="toStep2">Continue →</button>
+    </div>
+
+    <!-- Step 2 ─────────────────────────────────── -->
+    <div class="step-panel" id="step2">
+        <div class="page-title">Tell us about your day</div>
+        <p class="page-sub">A few quick questions so we can build the perfect schedule.</p>
+
+        <div class="form-group">
+            <label class="form-label">When does your day start and end?</label>
+            <div class="time-row">
+                <div class="time-group">
+                    <div class="time-label">Start time</div>
+                    <input type="time" class="input" id="startTime" value="08:00" />
+                </div>
+                <div class="time-group">
+                    <div class="time-label">End time</div>
+                    <input type="time" class="input" id="endTime" value="22:00" />
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">When are you most productive?</label>
+            <div class="radio-group" id="energyGroup">
+                <label class="radio-opt">
+                    <input type="radio" name="energy" value="morning" />
+                    <span class="radio-icon">🌅</span>
+                    <div><div class="radio-text">Morning person</div><div class="radio-sub">Best focus before noon</div></div>
+                </label>
+                <label class="radio-opt sel">
+                    <input type="radio" name="energy" value="midday" checked />
+                    <span class="radio-icon">☀️</span>
+                    <div><div class="radio-text">Midday peak</div><div class="radio-sub">Hit your stride around noon</div></div>
+                </label>
+                <label class="radio-opt">
+                    <input type="radio" name="energy" value="afternoon" />
+                    <span class="radio-icon">🌤️</span>
+                    <div><div class="radio-text">Afternoon person</div><div class="radio-sub">Most productive 2 pm – 6 pm</div></div>
+                </label>
+                <label class="radio-opt">
+                    <input type="radio" name="energy" value="evening" />
+                    <span class="radio-icon">🌙</span>
+                    <div><div class="radio-text">Night owl</div><div class="radio-sub">Come alive in the evening</div></div>
+                </label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">How often do you want breaks?</label>
+            <div class="radio-group" id="breakGroup">
+                <label class="radio-opt">
+                    <input type="radio" name="breaks" value="30" />
+                    <span class="radio-icon">⚡</span>
+                    <div><div class="radio-text">Every 30 minutes</div><div class="radio-sub">5-min resets keep you sharp</div></div>
+                </label>
+                <label class="radio-opt sel">
+                    <input type="radio" name="breaks" value="60" checked />
+                    <span class="radio-icon">☕</span>
+                    <div><div class="radio-text">Every hour</div><div class="radio-sub">10-min breathers</div></div>
+                </label>
+                <label class="radio-opt">
+                    <input type="radio" name="breaks" value="120" />
+                    <span class="radio-icon">🧘</span>
+                    <div><div class="radio-text">Every 2 hours</div><div class="radio-sub">Longer 15-min breaks</div></div>
+                </label>
+                <label class="radio-opt">
+                    <input type="radio" name="breaks" value="0" />
+                    <span class="radio-icon">🚀</span>
+                    <div><div class="radio-text">No scheduled breaks</div><div class="radio-sub">I'll manage it myself</div></div>
+                </label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Include meal breaks?</label>
+            <div class="toggle-row" id="mealToggleRow">
+                <span>Yes, schedule my meals</span>
+                <div class="toggle on" id="mealToggle"></div>
+            </div>
+            <div class="meal-grid" id="mealGrid">
+                <div><label>🍳 Breakfast</label><input type="time" class="input" id="breakfastTime" value="08:30" /></div>
+                <div><label>🥗 Lunch</label>    <input type="time" class="input" id="lunchTime"     value="13:00" /></div>
+                <div><label>🍽️ Dinner</label>   <input type="time" class="input" id="dinnerTime"    value="19:00" /></div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Any fixed appointments? <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+            <span class="form-sub">Events with a locked time you can't move</span>
+            <div id="fixedList" style="margin-bottom:10px;"></div>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <input type="time" class="input" id="fixedTime" style="width:110px;flex-shrink:0;" />
+                <input type="text"  class="input" id="fixedName" placeholder="e.g. Team meeting" />
+                <button class="btn-outline" id="addFixedBtn" style="white-space:nowrap;flex-shrink:0;">+ Add</button>
+            </div>
+        </div>
+
+        <p class="error" id="err2">Please check your start and end times.</p>
+        <button class="btn-primary" id="toStep3">Build My Schedule →</button>
+    </div>
+
+    <!-- Step 3 ─────────────────────────────────── -->
+    <div class="step-panel" id="step3">
+        <div class="sched-header">
+            <div>
+                <div class="page-title">Your Day, Planned 📋</div>
+                <p style="color:var(--muted);font-size:14px;" id="schedDate"></p>
+            </div>
+            <button class="btn-outline" id="restartBtn">Start Over</button>
+        </div>
+        <div class="stats-row" id="statsRow"></div>
+        <div class="timeline" id="timeline"></div>
+    </div>
+
+</div>
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const tasks = [];
+const fixed = [];
+let selDur = 60;
+let selPri = 'medium';
+let mealOn = true;
+
+// ── Utils ──────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const toMin  = t => { const [h,m] = t.split(':').map(Number); return h*60+m; };
+const fmtDur = m => m < 60 ? `${m} min` : (m%60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m/60}h`);
+const fmtTime = m => {
+    const h = Math.floor(m/60)%24, min = m%60;
+    return `${h%12||12}:${String(min).padStart(2,'0')} ${h>=12?'PM':'AM'}`;
+};
+const fmt12 = t => {
+    const [h,m] = t.split(':').map(Number);
+    return `${h%12||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`;
+};
+
+// ── Step nav ───────────────────────────────────────────────────────────────
+function goTo(n) {
+    document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+    $(`step${n}`).classList.add('active');
+    [1,2,3].forEach(i => {
+        const d = $(`dot${i}`);
+        d.className = 'step-dot';
+        if (i < n)      d.classList.add('done');
+        else if (i===n) d.classList.add('active');
+    });
+    window.scrollTo(0,0);
+}
+
+// ── Duration chips ─────────────────────────────────────────────────────────
+$('durGroup').addEventListener('click', e => {
+    const b = e.target.closest('.chip'); if (!b) return;
+    document.querySelectorAll('#durGroup .chip').forEach(c => c.classList.remove('sel'));
+    b.classList.add('sel');
+    if (b.dataset.min === 'custom') {
+        $('customWrap').style.display = 'block';
+        selDur = null;
+    } else {
+        $('customWrap').style.display = 'none';
+        selDur = parseInt(b.dataset.min);
+    }
+});
+$('customMin').addEventListener('input', e => { selDur = parseInt(e.target.value) || null; });
+
+// ── Priority buttons ───────────────────────────────────────────────────────
+document.querySelectorAll('.pri-btn').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.pri-btn').forEach(x => x.classList.remove('sel'));
+    b.classList.add('sel');
+    selPri = b.dataset.p;
+}));
+
+// ── Add task ───────────────────────────────────────────────────────────────
+function addTask() {
+    const name = $('taskName').value.trim();
+    const dur  = selDur || parseInt($('customMin').value);
+    if (!name) { $('taskName').focus(); return; }
+    if (!dur || dur < 5) { alert('Please set a valid duration.'); return; }
+    tasks.push({ id: Date.now(), name, dur, priority: selPri });
+    $('taskName').value = '';
+    renderTasks();
+}
+$('addTaskBtn').addEventListener('click', addTask);
+$('taskName').addEventListener('keydown', e => { if (e.key==='Enter') addTask(); });
+
+function renderTasks() {
+    const el = $('taskList');
+    if (!tasks.length) { el.innerHTML = '<div class="empty">No tasks yet — add one above</div>'; return; }
+    el.innerHTML = tasks.map(t => `
+        <div class="task-card" data-p="${t.priority}">
+            <div class="task-card-name">${t.name}</div>
+            <div class="task-card-meta">${fmtDur(t.dur)}</div>
+            <button class="btn-del" onclick="delTask(${t.id})">×</button>
+        </div>`).join('');
+}
+window.delTask = id => { tasks.splice(tasks.findIndex(t=>t.id===id), 1); renderTasks(); };
+
+// ── Step 1 → 2 ─────────────────────────────────────────────────────────────
+$('toStep2').addEventListener('click', () => {
+    if (!tasks.length) { $('err1').classList.add('show'); return; }
+    $('err1').classList.remove('show');
+    goTo(2);
+});
+
+// ── Radio options ──────────────────────────────────────────────────────────
+document.querySelectorAll('.radio-opt').forEach(opt => opt.addEventListener('click', () => {
+    opt.closest('.radio-group').querySelectorAll('.radio-opt').forEach(o => o.classList.remove('sel'));
+    opt.classList.add('sel');
+    opt.querySelector('input').checked = true;
+}));
+
+// ── Meal toggle ────────────────────────────────────────────────────────────
+$('mealToggleRow').addEventListener('click', () => {
+    mealOn = !mealOn;
+    $('mealToggle').classList.toggle('on', mealOn);
+    $('mealGrid').style.display = mealOn ? 'grid' : 'none';
+});
+
+// ── Fixed appointments ─────────────────────────────────────────────────────
+$('addFixedBtn').addEventListener('click', addFixed);
+$('fixedName').addEventListener('keydown', e => { if (e.key==='Enter') addFixed(); });
+
+function addFixed() {
+    const t = $('fixedTime').value, n = $('fixedName').value.trim();
+    if (!t || !n) return;
+    fixed.push({ time: t, name: n });
+    $('fixedTime').value = ''; $('fixedName').value = '';
+    renderFixed();
+}
+function renderFixed() {
+    $('fixedList').innerHTML = fixed.map((f,i) => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface);border-radius:8px;margin-bottom:6px;">
+            <span style="color:var(--accent);font-weight:600;min-width:56px;">${fmt12(f.time)}</span>
+            <span style="flex:1">${f.name}</span>
+            <button class="btn-del" onclick="delFixed(${i})">×</button>
+        </div>`).join('');
+}
+window.delFixed = i => { fixed.splice(i, 1); renderFixed(); };
+
+// ── Step 2 → 3 ─────────────────────────────────────────────────────────────
+$('toStep3').addEventListener('click', () => {
+    const s = $('startTime').value, e = $('endTime').value;
+    if (!s || !e || toMin(s) >= toMin(e)) { $('err2').classList.add('show'); return; }
+    $('err2').classList.remove('show');
+
+    const prefs = {
+        start:     toMin(s),
+        end:       toMin(e),
+        energy:    document.querySelector('input[name="energy"]:checked')?.value || 'midday',
+        breakInt:  parseInt(document.querySelector('input[name="breaks"]:checked')?.value || '60'),
+        mealOn,
+        breakfast: mealOn ? toMin($('breakfastTime').value) : null,
+        lunch:     mealOn ? toMin($('lunchTime').value)     : null,
+        dinner:    mealOn ? toMin($('dinnerTime').value)    : null,
+        fixed:     fixed.map(f => ({ min: toMin(f.time), name: f.name })),
+    };
+
+    const result = buildSchedule([...tasks], prefs);
+    renderSchedule(result, prefs);
+    goTo(3);
+});
+
+// ══ Schedule Engine ════════════════════════════════════════════════════════
+
+// Returns the ideal work window based on energy preference
+function peakWindow(energy, start, end) {
+    const map = { morning:[6*60,11*60], midday:[10*60,14*60], afternoon:[14*60,18*60], evening:[18*60,22*60] };
+    const [ps,pe] = map[energy] || map.midday;
+    return [Math.max(ps,start), Math.min(pe,end)];
+}
+
+// Computes open time slots around blocked intervals
+function freeSlots(start, end, blocked) {
+    const slots = []; let cur = start;
+    for (const b of blocked) {
+        if (b.start > cur) slots.push({ start:cur, end:b.start });
+        cur = Math.max(cur, b.end);
+    }
+    if (cur < end) slots.push({ start:cur, end });
+    return slots;
+}
+
+// Places tasks into slots greedily; returns placed event objects
+function placeTasks(taskList, slots) {
+    const placed = [];
+    const pool = slots.map(s => ({ ...s })); // mutable copy
+    for (const t of taskList) {
+        for (const sl of pool) {
+            if (sl.end - sl.start >= t.dur) {
+                placed.push({ start:sl.start, end:sl.start+t.dur, label:t.name, type:'task', priority:t.priority });
+                sl.start += t.dur;
+                break;
+            }
+        }
+    }
+    return placed;
+}
+
+function buildSchedule(taskList, p) {
+    // 1. Build blocked intervals (meals + fixed appointments)
+    const blocked = [];
+    if (p.mealOn) {
+        if (p.breakfast != null) blocked.push({ start:p.breakfast,    end:p.breakfast+20, label:'🍳 Breakfast', type:'meal' });
+        if (p.lunch     != null) blocked.push({ start:p.lunch,        end:p.lunch+45,     label:'🥗 Lunch',     type:'meal' });
+        if (p.dinner    != null) blocked.push({ start:p.dinner,       end:p.dinner+45,    label:'🍽️ Dinner',    type:'meal' });
+    }
+    for (const f of p.fixed) blocked.push({ start:f.min, end:f.min+60, label:`📌 ${f.name}`, type:'fixed' });
+    blocked.sort((a,b) => a.start - b.start);
+
+    // 2. Sort tasks: high → medium → low, then by duration (shorter first within same priority)
+    const priOrder = { high:0, medium:1, low:2 };
+    const sorted = [...taskList].sort((a,b) => priOrder[a.priority] - priOrder[b.priority] || a.dur - b.dur);
+
+    // 3. Separate high-priority tasks to prefer peak-energy slots
+    const [pkStart, pkEnd] = peakWindow(p.energy, p.start, p.end);
+    const highTasks  = sorted.filter(t => t.priority === 'high');
+    const otherTasks = sorted.filter(t => t.priority !== 'high');
+
+    // Build two slot views: peak-window slots, and all-day slots
+    const allSlots  = freeSlots(p.start, p.end, blocked);
+    const peakSlots = allSlots
+        .map(s => ({ start:Math.max(s.start, pkStart), end:Math.min(s.end, pkEnd) }))
+        .filter(s => s.end > s.start);
+
+    // Place high-priority tasks in peak slots; fall back to all-day if peak is too small
+    const highPlaced  = placeTasks(highTasks,  peakSlots.length ? peakSlots : allSlots);
+    const highNames   = new Set(highPlaced.map(e => e.label));
+
+    // Block the slots used by high tasks so other tasks don't overlap
+    const highBlocked = [...blocked, ...highPlaced];
+    highBlocked.sort((a,b) => a.start - b.start);
+    const remainingSlots = freeSlots(p.start, p.end, highBlocked);
+
+    // Place everything else in remaining free time
+    const otherPlaced = placeTasks(otherTasks, remainingSlots);
+
+    const placed = [...highPlaced, ...otherPlaced];
+
+    // 4. Insert breaks after work blocks (skip if breakInt === 0)
+    const breaks = [];
+    if (p.breakInt > 0) {
+        const breakDur = p.breakInt <= 30 ? 5 : p.breakInt <= 60 ? 10 : 15;
+        const workEvs  = [...placed].sort((a,b) => a.start - b.start);
+        let lastBreakEnd = p.start;
+
+        for (let i = 0; i < workEvs.length; i++) {
+            const ev      = workEvs[i];
+            const nextEv  = workEvs[i + 1];
+            const gapAfter = (nextEv ? nextEv.start : p.end) - ev.end;
+
+            // Insert break after this task if enough work time has passed and there's room
+            if (ev.end - lastBreakEnd >= p.breakInt && gapAfter >= breakDur) {
+                breaks.push({ start:ev.end, end:ev.end+breakDur, label:'☕ Break', type:'break' });
+                lastBreakEnd = ev.end + breakDur;
+            } else {
+                lastBreakEnd = Math.max(lastBreakEnd, ev.end);
+            }
+        }
+    }
+
+    // 5. Build final sorted event list
+    const allEvents = [...blocked, ...placed, ...breaks].sort((a,b) => a.start - b.start);
+
+    // 6. Fill gaps between events with free-time blocks
+    const timeline = [];
+    let cursor = p.start;
+    for (const ev of allEvents) {
+        if (ev.start > cursor + 4) timeline.push({ start:cursor, end:ev.start, label:'✨ Free time', type:'free' });
+        timeline.push(ev);
+        cursor = Math.max(cursor, ev.end);
+    }
+    if (cursor < p.end - 4) timeline.push({ start:cursor, end:p.end, label:'✨ Free time', type:'free' });
+
+    // 7. Find tasks that didn't fit
+    const placedNames = new Set(placed.map(e => e.label));
+    const unscheduled = taskList.filter(t => !placedNames.has(t.name));
+
+    return { timeline: timeline.sort((a,b) => a.start - b.start), unscheduled, pkStart, pkEnd };
+}
+
+// ══ Render Schedule ════════════════════════════════════════════════════════
+
+function renderSchedule({ timeline, unscheduled, pkStart, pkEnd }, prefs) {
+    $('schedDate').textContent = new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+
+    // Stats
+    const workMin = timeline.filter(e=>e.type==='task') .reduce((s,e)=>s+(e.end-e.start),0);
+    const freeMin = timeline.filter(e=>e.type==='free'||e.type==='break').reduce((s,e)=>s+(e.end-e.start),0);
+    const count   = timeline.filter(e=>e.type==='task').length;
+    $('statsRow').innerHTML = `
+        <div class="stat-card"><div class="stat-num">${count}</div><div class="stat-lbl">Tasks</div></div>
+        <div class="stat-card"><div class="stat-num">${fmtDur(workMin)}</div><div class="stat-lbl">Productive time</div></div>
+        <div class="stat-card"><div class="stat-num">${fmtDur(freeMin)}</div><div class="stat-lbl">Rest &amp; free time</div></div>
+    `;
+
+    const cardCls = { task:e=>`c-${e.priority}`, meal:()=>'c-meal', break:()=>'c-break', fixed:()=>'c-fixed', free:()=>'c-free' };
+    const dotCls  = { task:e=>`d-${e.priority}`, meal:()=>'d-meal', break:()=>'d-break', fixed:()=>'d-fixed', free:()=>'d-free' };
+
+    $('timeline').innerHTML = timeline.map(ev => `
+        <div class="tl-block">
+            <div class="tl-time">${fmtTime(ev.start)}</div>
+            <div class="tl-dot ${dotCls[ev.type]?.(ev) ?? ''}"></div>
+            <div class="tl-card ${cardCls[ev.type]?.(ev) ?? ''}">
+                <div class="tl-card-title">${ev.label}</div>
+                <div class="tl-card-meta">${fmtDur(ev.end - ev.start)} · ends ${fmtTime(ev.end)}</div>
+            </div>
+        </div>`).join('');
+
+    // Peak energy hint
+    if (pkStart < pkEnd) {
+        $('timeline').innerHTML += `
+            <div class="peak-hint">
+                ⚡ Your peak energy window is <strong>${fmtTime(pkStart)} – ${fmtTime(pkEnd)}</strong>.
+                High-priority tasks were scheduled here first.
+            </div>`;
+    }
+
+    // Unscheduled warning
+    if (unscheduled.length) {
+        $('timeline').innerHTML += `
+            <div class="warn-box">
+                <strong>⚠️ Couldn't fit everything</strong>
+                <span>These didn't fit today: ${unscheduled.map(t=>t.name).join(', ')}</span>
+            </div>`;
+    }
+}
+
+// ── Restart ────────────────────────────────────────────────────────────────
+$('restartBtn').addEventListener('click', () => {
+    tasks.length = 0; fixed.length = 0;
+    renderTasks(); renderFixed();
+    goTo(1);
+});
+</script>
+</body>
+</html>

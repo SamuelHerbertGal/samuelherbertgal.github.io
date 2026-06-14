@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Projects</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f172a;color:#f1f5f9;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 16px;}
+h1{font-size:28px;font-weight:700;margin-bottom:8px;color:#f1f5f9;}
+p{color:#64748b;margin-bottom:40px;font-size:15px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;width:100%;max-width:820px;}
+a{text-decoration:none;}
+.card{background:#1e293b;border:1.5px solid #334155;border-radius:14px;padding:28px 24px;transition:border-color .2s,transform .2s;cursor:pointer;}
+.card:hover{border-color:#818cf8;transform:translateY(-3px);}
+.card-icon{font-size:40px;margin-bottom:14px;}
+.card-title{font-size:18px;font-weight:700;margin-bottom:6px;color:#f1f5f9;}
+.card-desc{font-size:13px;color:#64748b;line-height:1.5;}
+.tag{display:inline-block;margin-top:12px;font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;}
+.tag-game{background:rgba(250,204,21,.12);color:#fbbf24;}
+.tag-tool{background:rgba(129,140,248,.12);color:#818cf8;}
+</style>
+</head>
+<body>
+<h1>Projects</h1>
+<p>Click a card to open it.</p>
+<div class="grid">
+  <a href="kart.html">
+    <div class="card">
+      <div class="card-icon">🏎️</div>
+      <div class="card-title">Kart Dash</div>
+      <div class="card-desc">Mario Kart-style racing game with items, drifting, upgrades, and a coin shop.</div>
+      <span class="tag tag-game">Game</span>
+    </div>
+  </a>
+  <a href="race.html">
+    <div class="card">
+      <div class="card-icon">🚗</div>
+      <div class="card-title">Race</div>
+      <div class="card-desc">Top-down racing with three vehicle classes, a shop system, and Mario Kart items.</div>
+      <span class="tag tag-game">Game</span>
+    </div>
+  </a>
+  <a href="asteroid.html">
+    <div class="card">
+      <div class="card-icon">☄️</div>
+      <div class="card-title">Asteroid Storm</div>
+      <div class="card-desc">Asteroids-style shooter with splitting rocks, UFOs, upgrades shop, and a shield mechanic.</div>
+      <span class="tag tag-game">Game</span>
+    </div>
+  </a>
+  <a href="dash.html">
+    <div class="card">
+      <div class="card-icon">🏍️</div>
+      <div class="card-title">DASH</div>
+      <div class="card-desc">Cockpit-view motorbike grand prix with pseudo-3D road, items, oil slicks, and rocket attacks.</div>
+      <span class="tag tag-game">Game</span>
+    </div>
+  </a>
+  <a href="schedule.html">
+    <div class="card">
+      <div class="card-icon">📋</div>
+      <div class="card-title">Day Planner</div>
+      <div class="card-desc">Plan your day with tasks, priorities, energy peaks, breaks, and a smart schedule builder.</div>
+      <span class="tag tag-tool">Tool</span>
+    </div>
+  </a>
+</div>
+</body>
+</html>
