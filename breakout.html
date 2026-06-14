@@ -335,10 +335,10 @@ function draw() {
 
 window.addEventListener("keydown", e => {
     if (e.key in keys) keys[e.key] = true;
-    if (e.key === "Shift") shiftMode = true;
-    if (e.key === "Alt") {
-        altMode = true;
-        e.preventDefault(); // Stop window menu conflict focus
+    if (e.key === "Shift") altMode = true;
+    if (e.key === " ") {
+        shiftMode = !shiftMode;
+        e.preventDefault();
     }
     
     if(e.key.toLowerCase() === "p") {
@@ -352,8 +352,7 @@ window.addEventListener("keydown", e => {
 
 window.addEventListener("keyup", e => {
     if (e.key in keys) keys[e.key] = false;
-    if (e.key === "Shift") shiftMode = false;
-    if (e.key === "Alt") altMode = false;
+    if (e.key === "Shift") altMode = false;
 });
 
 draw();
