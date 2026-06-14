@@ -132,7 +132,7 @@ class Ball {
             }
         } else {
             const pX = paddle.x + 57;
-            const pTop = 455, pH = paddle.width;
+            const pTop = 520 - paddle.width / 2, pH = paddle.width;
             if (this.y > pTop - 5 && this.y < pTop + pH && this.x > pX - 8 && this.x < pX + 23) {
                 this.dx = this.x < (pX + 7.5) ? -Math.abs(this.dx) : Math.abs(this.dx);
                 this.dy = ((this.y - (pTop + pH / 2)) / (pH / 2)) * 9;
@@ -213,7 +213,7 @@ function gameLoop() {
     }
 
     paddle.x += paddle.dx;
-    paddle.x = Math.max(0, Math.min(800 - paddle.width, paddle.x));
+    paddle.x = Math.max(0, Math.min(shiftMode ? 800 - 72 : 800 - paddle.width, paddle.x));
 
     game.balls.forEach((b, bi) => {
         b.update();
@@ -311,7 +311,7 @@ function draw() {
     
     ctx.shadowBlur = 0;
     
-    const pRect = shiftMode ? { x: paddle.x + 57, y: 455, w: 15, h: paddle.width } : { x: paddle.x, y: 570, w: paddle.width, h: 15 };
+    const pRect = shiftMode ? { x: paddle.x + 57, y: 520 - paddle.width / 2, w: 15, h: paddle.width } : { x: paddle.x, y: 570, w: paddle.width, h: 15 };
     
     ctx.fillStyle = "#000044";
     ctx.fillRect(pRect.x, pRect.y, pRect.w, pRect.h);
