@@ -271,12 +271,12 @@ function gameLoop() {
 
     game.powerUps.forEach((p, i) => {
         p.y += p.dy;
-        
-        const collectY = shiftMode ? 455 : 565;
-        const collectXMin = shiftMode ? paddle.x + 57 : paddle.x;
-        const collectXMax = shiftMode ? paddle.x + 72 : paddle.x + paddle.width;
 
-        if(p.y > collectY && p.x > collectXMin && p.x < collectXMax) {
+        const pr = shiftMode
+            ? { left: paddle.x + 57, right: paddle.x + 72, top: 520 - paddle.width / 2, bottom: 520 + paddle.width / 2 }
+            : { left: paddle.x, right: paddle.x + paddle.width, top: 570, bottom: 585 };
+
+        if(p.x >= pr.left && p.x <= pr.right && p.y >= pr.top && p.y <= pr.bottom) {
             if(p.type === 'MULTI') {
                 game.balls.push(new Ball(paddle.x, 550, -6, -5));
                 game.balls.push(new Ball(paddle.x + paddle.width, 550, 6, -5));
