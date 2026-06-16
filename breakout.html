@@ -162,7 +162,7 @@ class Ball {
             if (vdotn < 0) {                                    // moving into the paddle
                 this.dx -= 2 * vdotn * nx;                      // reflect
                 this.dy -= 2 * vdotn * ny;
-                this.dx += (t / half) * 4;                      // english from hit position
+                this.dx += ((this.x - cx) / half) * 4;          // english: screen-space, so right-of-center always pushes right
                 const overlap = (this.radius + PADDLE_THICK / 2) - dist;
                 this.x += nx * overlap; this.y += ny * overlap; // push out of paddle
                 const sp = Math.hypot(this.dx, this.dy);
