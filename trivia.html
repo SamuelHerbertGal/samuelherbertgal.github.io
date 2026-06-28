@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brain Box: Neon Trivia</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        background: radial-gradient(circle at 50% 20%, #14143a 0%, #05050f 70%);
+        color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        min-height: 100vh; display: flex; align-items: center; justify-content: center;
+        padding: 20px; overflow-x: hidden;
+    }
+    #app {
+        width: 100%; max-width: 640px; border: 3px solid var(--neon-blue);
+        border-radius: 18px; box-shadow: 0 0 35px rgba(0,242,255,0.4);
+        background: rgba(5,5,20,0.85); padding: 28px; position: relative;
+    }
+    h1 { font-size: 2.4rem; font-weight: 900; font-style: italic; color: #fff;
+        text-shadow: 0 0 20px var(--neon-pink); text-align: center; line-height: 1.1; }
+    .sub { text-align: center; color: var(--neon-blue); font-size: 0.85rem;
+        letter-spacing: 2px; text-transform: uppercase; margin: 10px 0 26px; opacity: 0.8; }
+    .hidden { display: none !important; }
+
+    #hud { display: flex; justify-content: space-between; align-items: center;
+        font-size: 0.85rem; text-transform: uppercase; margin-bottom: 8px; }
+    .hud-val { color: #fff; text-shadow: 0 0 10px var(--neon-blue); }
+    #streak.hot { color: var(--gold); text-shadow: 0 0 12px var(--gold); }
+
+    #timer-track { height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px;
+        overflow: hidden; margin-bottom: 22px; }
+    #timer-fill { height: 100%; width: 100%; background: var(--neon-blue);
+        box-shadow: 0 0 12px var(--neon-blue); transition: width 0.1s linear; }
+
+    #prompt-label { text-align: center; font-size: 0.8rem; letter-spacing: 2px;
+        text-transform: uppercase; opacity: 0.7; margin-bottom: 8px; }
+    #prompt { text-align: center; margin-bottom: 26px; min-height: 60px;
+        display: flex; align-items: center; justify-content: center; }
+    #prompt .text { font-size: 1.5rem; color: #fff; font-weight: 700; text-shadow: 0 0 16px var(--neon-blue); line-height: 1.3; }
+
+    #answers { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .answer {
+        background: rgba(0,242,255,0.06); color: var(--neon-blue);
+        border: 2px solid rgba(0,242,255,0.45); border-radius: 12px;
+        padding: 16px 14px; font-family: 'Orbitron'; font-size: 0.95rem; font-weight: 700;
+        cursor: pointer; transition: 0.15s; text-align: center; min-height: 64px;
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .answer .num { opacity: 0.5; font-size: 0.8rem; }
+    .answer:hover:not(:disabled) { background: var(--neon-blue); color: #000; box-shadow: 0 0 24px var(--neon-blue); }
+    .answer:disabled { cursor: default; }
+    .answer.correct { background: var(--green); color: #000; border-color: var(--green); box-shadow: 0 0 26px var(--green); }
+    .answer.wrong { background: var(--red); color: #fff; border-color: var(--red); box-shadow: 0 0 26px var(--red); }
+    .answer.dim { opacity: 0.35; }
+
+    .btn {
+        display: block; width: 100%; background: transparent; color: var(--neon-blue);
+        border: 2px solid var(--neon-blue); border-radius: 12px; padding: 16px;
+        font-family: 'Orbitron'; font-size: 1.1rem; font-weight: 700; cursor: pointer;
+        transition: 0.2s; margin-top: 14px; text-transform: uppercase; letter-spacing: 1px;
+    }
+    .btn:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    .btn small { display: block; font-size: 0.7rem; opacity: 0.7; font-weight: 400; margin-top: 4px; }
+
+    #result h1 { margin-bottom: 6px; }
+    .grade { font-size: 5rem; font-weight: 900; text-align: center; margin: 10px 0; }
+    .score-line { text-align: center; font-size: 1.1rem; color: #fff; margin-bottom: 6px; }
+    .score-line span { color: var(--gold); text-shadow: 0 0 12px var(--gold); }
+    .stat-row { display: flex; justify-content: space-around; margin: 22px 0;
+        text-align: center; font-size: 0.8rem; text-transform: uppercase; opacity: 0.85; }
+    .stat-row .v { display: block; font-size: 1.6rem; color: #fff; margin-top: 4px; }
+
+    .footnote { text-align: center; font-size: 0.7rem; opacity: 0.5; margin-top: 18px; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+    <section id="menu">
+        <h1>BRAIN BOX</h1>
+        <p class="sub">Neon Trivia</p>
+        <button class="btn" data-mode="science">Science &amp; Nature<small>Physics, biology, space &amp; more</small></button>
+        <button class="btn" data-mode="history">History &amp; Culture<small>Events, figures &amp; the arts</small></button>
+        <button class="btn" data-mode="mixed">Mixed<small>A bit of everything</small></button>
+        <p class="footnote">10 QUESTIONS &middot; BEAT THE CLOCK &middot; KEYS 1-4 TO ANSWER</p>
+    </section>
+
+    <section id="quiz" class="hidden">
+        <div id="hud">
+            <span>Q <span id="q-num" class="hud-val">1</span>/<span id="q-total" class="hud-val">10</span></span>
+            <span id="streak">Streak: <span id="streak-val" class="hud-val">0</span></span>
+            <span>Score: <span id="score-val" class="hud-val">0</span></span>
+        </div>
+        <div id="timer-track"><div id="timer-fill"></div></div>
+        <p id="prompt-label">Question</p>
+        <div id="prompt"></div>
+        <div id="answers"></div>
+    </section>
+
+    <section id="result" class="hidden">
+        <h1>QUIZ COMPLETE</h1>
+        <p class="sub" id="result-mode">Mixed Mode</p>
+        <div class="grade" id="grade">A</div>
+        <p class="score-line">SCORE <span id="final-score">0</span></p>
+        <div class="stat-row">
+            <div>Correct<span class="v" id="final-correct">0/10</span></div>
+            <div>Best Streak<span class="v" id="final-streak">0</span></div>
+            <div>Accuracy<span class="v" id="final-acc">0%</span></div>
+        </div>
+        <button class="btn" id="again-btn">Play Again</button>
+        <button class="btn" id="menu-btn">Main Menu</button>
+    </section>
+
+</div>
+
+<script>
+// ---------------- question bank ----------------
+// each: { q, correct, wrong:[3], cat }
+const BANK = [
+    // ---- science ----
+    { cat:"science", q:"What is the chemical symbol for gold?", correct:"Au", wrong:["Ag","Gd","Go"] },
+    { cat:"science", q:"Which planet is known as the Red Planet?", correct:"Mars", wrong:["Venus","Jupiter","Mercury"] },
+    { cat:"science", q:"What is the powerhouse of the cell?", correct:"Mitochondria", wrong:["Nucleus","Ribosome","Chloroplast"] },
+    { cat:"science", q:"Which gas do plants absorb from the air?", correct:"Carbon dioxide", wrong:["Oxygen","Nitrogen","Hydrogen"] },
+    { cat:"science", q:"How many bones are in the adult human body?", correct:"206", wrong:["201","256","189"] },
+    { cat:"science", q:"What is the largest planet in our solar system?", correct:"Jupiter", wrong:["Saturn","Neptune","Earth"] },
+    { cat:"science", q:"What is the hardest known natural material?", correct:"Diamond", wrong:["Gold","Iron","Quartz"] },
+    { cat:"science", q:"What process do plants use to make food?", correct:"Photosynthesis", wrong:["Respiration","Digestion","Fermentation"] },
+    { cat:"science", q:"What is the freezing point of water in Celsius?", correct:"0°C", wrong:["32°C","100°C","-10°C"] },
+    { cat:"science", q:"Which star is closest to Earth?", correct:"The Sun", wrong:["Proxima Centauri","Sirius","Polaris"] },
+    { cat:"science", q:"What does DNA primarily store?", correct:"Genetic information", wrong:["Energy","Proteins","Water"] },
+    { cat:"science", q:"Which element has the symbol O?", correct:"Oxygen", wrong:["Osmium","Gold","Oganesson"] },
+    { cat:"science", q:"What force pulls objects toward Earth?", correct:"Gravity", wrong:["Magnetism","Friction","Inertia"] },
+    { cat:"science", q:"What is H2O more commonly known as?", correct:"Water", wrong:["Salt","Ammonia","Peroxide"] },
+    // ---- history & culture ----
+    { cat:"history", q:"Who was the first President of the United States?", correct:"George Washington", wrong:["Abraham Lincoln","Thomas Jefferson","John Adams"] },
+    { cat:"history", q:"In which year did World War II end?", correct:"1945", wrong:["1939","1918","1950"] },
+    { cat:"history", q:"Who painted the Mona Lisa?", correct:"Leonardo da Vinci", wrong:["Michelangelo","Raphael","Vincent van Gogh"] },
+    { cat:"history", q:"Which empire built the Colosseum?", correct:"Roman", wrong:["Greek","Ottoman","Persian"] },
+    { cat:"history", q:"Who was the first person to walk on the Moon?", correct:"Neil Armstrong", wrong:["Buzz Aldrin","Yuri Gagarin","John Glenn"] },
+    { cat:"history", q:"In which year did the Titanic sink?", correct:"1912", wrong:["1905","1920","1898"] },
+    { cat:"history", q:"Which country gifted the Statue of Liberty to the USA?", correct:"France", wrong:["United Kingdom","Spain","Italy"] },
+    { cat:"history", q:"Who led India's nonviolent independence movement?", correct:"Mahatma Gandhi", wrong:["Jawaharlal Nehru","Subhas Bose","Rabindranath Tagore"] },
+    { cat:"history", q:"The Great Wall is located in which country?", correct:"China", wrong:["Japan","India","Mongolia"] },
+    { cat:"history", q:"Which ancient civilization built the pyramids of Giza?", correct:"Egyptians", wrong:["Romans","Greeks","Mayans"] },
+    { cat:"history", q:"Who formulated the laws of motion and universal gravitation?", correct:"Isaac Newton", wrong:["Albert Einstein","Galileo Galilei","Charles Darwin"] },
+    { cat:"history", q:"Which war was fought between the Union and the Confederacy?", correct:"American Civil War", wrong:["Revolutionary War","War of 1812","Cold War"] },
+    { cat:"history", q:"Who wrote the play 'Romeo and Juliet'?", correct:"William Shakespeare", wrong:["Charles Dickens","Mark Twain","Jane Austen"] },
+    { cat:"history", q:"What was the ancient Egyptian writing system called?", correct:"Hieroglyphics", wrong:["Cuneiform","Sanskrit","Runes"] },
+];
+
+const Q_PER_ROUND = 10;
+const TIME_PER_Q = 15;
+const BASE_POINTS = 100;
+
+const $ = id => document.getElementById(id);
+const menuEl = $("menu"), quizEl = $("quiz"), resultEl = $("result");
+const promptEl = $("prompt"), promptLabel = $("prompt-label"), answersEl = $("answers");
+const timerFill = $("timer-fill");
+
+let mode = "mixed", deck = [], qIndex = 0, score = 0, streak = 0, bestStreak = 0, correctCount = 0;
+let timeLeft = 0, timerId = null, locked = false, currentQ = null;
+
+const shuffle = arr => {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+};
+
+function startGame(selectedMode) {
+    mode = selectedMode;
+    const pool = mode === "mixed" ? BANK : BANK.filter(q => q.cat === mode);
+    deck = shuffle(pool).slice(0, Q_PER_ROUND);
+    qIndex = 0; score = 0; streak = 0; bestStreak = 0; correctCount = 0;
+    menuEl.classList.add("hidden");
+    resultEl.classList.add("hidden");
+    quizEl.classList.remove("hidden");
+    $("q-total").textContent = deck.length;
+    nextQuestion();
+}
+
+function nextQuestion() {
+    if (qIndex >= deck.length) { endGame(); return; }
+    locked = false;
+    const item = deck[qIndex];
+    currentQ = { answer: item.correct, options: shuffle([item.correct, ...item.wrong]), q: item.q };
+
+    $("q-num").textContent = qIndex + 1;
+    $("streak-val").textContent = streak;
+    $("score-val").textContent = score;
+    $("streak").classList.toggle("hot", streak >= 3);
+
+    promptEl.innerHTML = `<span class="text">${currentQ.q}</span>`;
+
+    answersEl.innerHTML = "";
+    currentQ.options.forEach((opt, i) => {
+        const btn = document.createElement("button");
+        btn.className = "answer";
+        btn.innerHTML = `<span class="num">${i + 1}</span> ${opt}`;
+        btn.addEventListener("click", () => choose(opt, btn));
+        answersEl.appendChild(btn);
+    });
+
+    startTimer();
+}
+
+function startTimer() {
+    timeLeft = TIME_PER_Q;
+    timerFill.style.width = "100%";
+    timerFill.style.background = "var(--neon-blue)";
+    clearInterval(timerId);
+    const tick = 0.05;
+    timerId = setInterval(() => {
+        timeLeft -= tick;
+        const pct = Math.max(0, timeLeft / TIME_PER_Q) * 100;
+        timerFill.style.width = pct + "%";
+        if (pct < 33) timerFill.style.background = "var(--red)";
+        else if (pct < 60) timerFill.style.background = "var(--gold)";
+        if (timeLeft <= 0) { clearInterval(timerId); timeOut(); }
+    }, tick * 1000);
+}
+
+function choose(opt, btn) {
+    if (locked) return;
+    locked = true;
+    clearInterval(timerId);
+    const correct = opt === currentQ.answer;
+    revealAnswer(btn, correct);
+    if (correct) {
+        correctCount++;
+        streak++;
+        bestStreak = Math.max(bestStreak, streak);
+        const timeBonus = Math.round((timeLeft / TIME_PER_Q) * BASE_POINTS);
+        const streakBonus = (streak - 1) * 25;
+        score += BASE_POINTS + timeBonus + streakBonus;
+    } else {
+        streak = 0;
+    }
+    $("score-val").textContent = score;
+    setTimeout(advance, 1300);
+}
+
+function timeOut() {
+    if (locked) return;
+    locked = true;
+    streak = 0;
+    revealAnswer(null, false);
+    setTimeout(advance, 1300);
+}
+
+function revealAnswer(chosenBtn, correct) {
+    [...answersEl.children].forEach(b => {
+        b.disabled = true;
+        const label = b.textContent.replace(/^\s*\d\s*/, "").trim();
+        if (label === currentQ.answer) b.classList.add("correct");
+        else b.classList.add("dim");
+    });
+    if (chosenBtn && !correct) {
+        chosenBtn.classList.remove("dim");
+        chosenBtn.classList.add("wrong");
+    }
+}
+
+function advance() { qIndex++; nextQuestion(); }
+
+function endGame() {
+    clearInterval(timerId);
+    quizEl.classList.add("hidden");
+    resultEl.classList.remove("hidden");
+    const total = deck.length;
+    const acc = Math.round((correctCount / total) * 100);
+    const grades = [
+        { min: 100, g: "S", t: "GENIUS!" },
+        { min: 90, g: "A", t: "BRAINIAC" },
+        { min: 70, g: "B", t: "WELL READ" },
+        { min: 50, g: "C", t: "NOT BAD" },
+        { min: 0, g: "D", t: "STUDY UP" },
+    ];
+    const grade = grades.find(x => acc >= x.min);
+    $("result-mode").textContent = { science: "Science & Nature", history: "History & Culture", mixed: "Mixed" }[mode] + " Mode";
+    $("grade").textContent = grade.g;
+    $("grade").style.color = acc >= 90 ? "var(--gold)" : acc >= 50 ? "var(--neon-blue)" : "var(--red)";
+    $("grade").style.textShadow = "0 0 25px currentColor";
+    document.querySelector("#result h1").textContent = grade.t;
+    $("final-score").textContent = score;
+    $("final-correct").textContent = correctCount + "/" + total;
+    $("final-streak").textContent = bestStreak;
+    $("final-acc").textContent = acc + "%";
+}
+
+document.querySelectorAll("[data-mode]").forEach(b =>
+    b.addEventListener("click", () => startGame(b.dataset.mode)));
+$("again-btn").addEventListener("click", () => startGame(mode));
+$("menu-btn").addEventListener("click", () => {
+    resultEl.classList.add("hidden");
+    menuEl.classList.remove("hidden");
+});
+
+window.addEventListener("keydown", e => {
+    if (quizEl.classList.contains("hidden") || locked) return;
+    const idx = parseInt(e.key, 10) - 1;
+    if (idx >= 0 && idx < answersEl.children.length) {
+        const btn = answersEl.children[idx];
+        const label = btn.textContent.replace(/^\s*\d\s*/, "").trim();
+        choose(label, btn);
+    }
+});
+</script>
+</body>
+</html>
