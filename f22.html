@@ -264,35 +264,97 @@ function drawObstacle(o) {
     }
 }
 
+// F-22 planform outline (right half, nose -> tail); mirrored for the left
+const JET_HALF = [
+    [0.00, -1.20],   // nose
+    [0.14, -0.62],   // forward fuselage
+    [0.20, -0.30],   // wing leading-edge root
+    [1.00,  0.18],   // wingtip (leading)
+    [0.96,  0.30],   // wingtip (trailing)
+    [0.26,  0.50],   // wing trailing-edge root
+    [0.30,  0.54],   // taileron leading edge
+    [0.64,  0.80],   // taileron tip
+    [0.24,  0.88],   // taileron trailing edge
+    [0.28,  1.02],   // engine nacelle outer
+    [0.09,  1.06],   // nozzle inner
+    [0.00,  1.03],   // tail centerline
+];
 function drawJet() {
     const p = project(jet.x, jet.y, 0);
     if (invuln > 0 && Math.floor(invuln * 20) % 2 === 0) return; // blink while hit
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(jet.roll * 0.5);
-    const s = 26;
-    // afterburners
-    ctx.fillStyle = "rgba(0,200,255,0.9)";
-    ctx.shadowBlur = 18; ctx.shadowColor = "#00ccff";
-    ctx.beginPath(); ctx.ellipse(-s * 0.28, s * 0.5, s * 0.13, s * 0.3 + Math.random() * 6, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(s * 0.28, s * 0.5, s * 0.13, s * 0.3 + Math.random() * 6, 0, 0, Math.PI * 2); ctx.fill();
+    const s = 30;
+    const flick = Math.random();
+
+    // ---- afterburner plumes (blue, length scales with throttle) ----
+    const flame = s * (0.5 + speed * 0.22);
+    for (const dx of [-0.17, 0.17]) {
+        const nx = dx * s, ny = s * 1.02;
+        ctx.fillStyle = `rgba(110,170,255,${0.35 + flick * 0.2})`;
+        ctx.shadowBlur = 24; ctx.shadowColor = "#3a7bff";
+        ctx.beginPath();
+        ctx.moveTo(nx - s * 0.13, ny);
+        ctx.quadraticCurveTo(nx, ny + flame * (0.85 + flick * 0.5), nx + s * 0.13, ny);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = `rgba(225,240,255,${0.7 + flick * 0.3})`;
+        ctx.beginPath();
+        ctx.moveTo(nx - s * 0.06, ny);
+        ctx.quadraticCurveTo(nx, ny + flame * (0.5 + flick * 0.3), nx + s * 0.06, ny);
+        ctx.closePath(); ctx.fill();
+    }
     ctx.shadowBlur = 0;
-    // swept wings
-    ctx.fillStyle = "#3a4a66";
+
+    // ---- twin canted vertical stabilizers (behind the body) ----
+    for (const side of [-1, 1]) {
+        ctx.fillStyle = "#39455c";
+        ctx.beginPath();
+        ctx.moveTo(side * s * 0.09, s * 0.50);
+        ctx.lineTo(side * s * 0.36, s * 0.26);
+        ctx.lineTo(side * s * 0.21, s * 0.64);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = "rgba(150,180,210,0.45)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+
+    // ---- main airframe (faceted metallic body) ----
+    const grad = ctx.createLinearGradient(-s, 0, s, 0);
+    grad.addColorStop(0, "#39455c");
+    grad.addColorStop(0.5, "#7686a4");
+    grad.addColorStop(1, "#39455c");
     ctx.beginPath();
-    ctx.moveTo(0, -s * 0.2); ctx.lineTo(-s, s * 0.35); ctx.lineTo(-s * 0.25, s * 0.4); ctx.lineTo(0, s * 0.1);
-    ctx.lineTo(s * 0.25, s * 0.4); ctx.lineTo(s, s * 0.35); ctx.closePath(); ctx.fill();
-    // fuselage
-    ctx.fillStyle = "#5a6a86";
-    ctx.beginPath();
-    ctx.moveTo(0, -s); ctx.lineTo(-s * 0.22, s * 0.5); ctx.lineTo(s * 0.22, s * 0.5); ctx.closePath(); ctx.fill();
-    // twin tails
-    ctx.strokeStyle = "#8aa"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(-s * 0.12, 0); ctx.lineTo(-s * 0.3, s * 0.3); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(s * 0.12, 0); ctx.lineTo(s * 0.3, s * 0.3); ctx.stroke();
-    // canopy
-    ctx.fillStyle = "#bfe9ff";
-    ctx.beginPath(); ctx.ellipse(0, -s * 0.35, s * 0.1, s * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.moveTo(JET_HALF[0][0] * s, JET_HALF[0][1] * s);
+    for (let i = 1; i < JET_HALF.length; i++) ctx.lineTo(JET_HALF[i][0] * s, JET_HALF[i][1] * s);
+    for (let i = JET_HALF.length - 2; i >= 1; i--) ctx.lineTo(-JET_HALF[i][0] * s, JET_HALF[i][1] * s);
+    ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+    ctx.strokeStyle = "#1c2433"; ctx.lineWidth = 1.5; ctx.stroke();
+
+    // ---- panel lines ----
+    ctx.strokeStyle = "rgba(20,26,38,0.55)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, -s * 0.25); ctx.lineTo(0, s * 0.95); ctx.stroke();
+    for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(side * s * 0.18, -s * 0.2);
+        ctx.lineTo(side * s * 0.85, s * 0.2);
+        ctx.stroke();
+    }
+
+    // ---- engine nozzles ----
+    for (const dx of [-0.17, 0.17]) {
+        ctx.fillStyle = "#15171d";
+        ctx.beginPath(); ctx.ellipse(dx * s, s * 0.98, s * 0.10, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#566174"; ctx.lineWidth = 1; ctx.stroke();
+    }
+
+    // ---- canopy ----
+    ctx.fillStyle = "#0c1a28";
+    ctx.beginPath(); ctx.ellipse(0, -s * 0.5, s * 0.13, s * 0.27, 0, 0, Math.PI * 2); ctx.fill();
+    const cg = ctx.createLinearGradient(0, -s * 0.76, 0, -s * 0.24);
+    cg.addColorStop(0, "#d6f1ff"); cg.addColorStop(0.5, "#5aa6cf"); cg.addColorStop(1, "#234f70");
+    ctx.fillStyle = cg;
+    ctx.beginPath(); ctx.ellipse(0, -s * 0.52, s * 0.085, s * 0.21, 0, 0, Math.PI * 2); ctx.fill();
+
     ctx.restore();
 }
 
