@@ -26,6 +26,39 @@
         border-radius: 10px; padding: 14px 44px; font-family: 'Orbitron'; font-size: 1.2rem;
         font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
     button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    .btn-row { display: flex; gap: 14px; }
+    .btn-sm { padding: 11px 26px; font-size: 0.95rem; }
+    #credits { color: var(--gold); font-size: 1.05rem; letter-spacing: 2px; margin-bottom: 18px;
+        text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+    /* ---- shop ---- */
+    #shop { position: absolute; inset: 0; background: rgba(2,2,12,0.95);
+        display: flex; flex-direction: column; align-items: center; padding: 26px 22px;
+        border-radius: 6px; z-index: 6; }
+    #shop.hidden { display: none; }
+    #shop h1 { font-size: 2.1rem; margin-bottom: 4px; }
+    #shop-credits { color: var(--gold); font-size: 1rem; letter-spacing: 2px; margin-bottom: 16px;
+        text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+    #shop-list { width: 100%; max-width: 560px; overflow-y: auto; flex: 1; display: flex;
+        flex-direction: column; gap: 10px; padding-right: 6px; }
+    #shop-list::-webkit-scrollbar { width: 8px; }
+    #shop-list::-webkit-scrollbar-thumb { background: rgba(0,242,255,0.4); border-radius: 4px; }
+    .shop-item { display: flex; align-items: center; gap: 14px; text-align: left;
+        border: 1.5px solid rgba(0,242,255,0.35); border-radius: 12px; padding: 12px 16px;
+        background: rgba(0,242,255,0.04); }
+    .shop-item .ico { font-size: 1.9rem; width: 40px; text-align: center; }
+    .shop-item .info { flex: 1; }
+    .shop-item .nm { color: #fff; font-size: 0.95rem; font-weight: 700; }
+    .shop-item .ds { color: #8aa; font-size: 0.7rem; line-height: 1.5; margin-top: 2px; letter-spacing: 0.5px; }
+    .shop-item .pips { margin-top: 5px; letter-spacing: 3px; font-size: 0.8rem; color: var(--neon-blue); }
+    .shop-item .pips .off { color: rgba(255,255,255,0.18); }
+    .shop-item .buy { min-width: 116px; text-align: center; padding: 10px 8px; font-size: 0.8rem;
+        letter-spacing: 1px; border-radius: 9px; }
+    .buy.afford { color: var(--gold); border-color: var(--gold); }
+    .buy.afford:hover { background: var(--gold); color: #000; box-shadow: 0 0 22px var(--gold); }
+    .buy.maxed { color: #5fd; border-color: #2a6; opacity: 0.7; cursor: default; }
+    .buy.maxed:hover { background: transparent; color: #5fd; box-shadow: none; }
+    .buy.poor { color: #777; border-color: #444; cursor: not-allowed; }
+    .buy.poor:hover { background: transparent; color: #777; box-shadow: none; }
 </style>
 </head>
 <body>
@@ -34,8 +67,18 @@
     <div id="overlay">
         <h1 id="ov-title">TRENCH RUN</h1>
         <p id="ov-sub">F-22 canyon assault</p>
-        <p id="ov-keys"><b>&larr; &uarr; &darr; &rarr;</b> / <b>WASD</b> fly &nbsp;&middot;&nbsp; dodge the obstacles &nbsp;&middot;&nbsp; survive</p>
-        <button id="start-btn">ENGAGE</button>
+        <p id="ov-keys"><b>&larr; &uarr; &darr; &rarr;</b> / <b>WASD</b> fly &nbsp;&middot;&nbsp; dodge boulders, poles &amp; lasers<br>graze obstacles for <b>NEAR-MISS</b> combos &nbsp;&middot;&nbsp; survive</p>
+        <p id="credits">&#9670; 0 CR</p>
+        <div class="btn-row">
+            <button id="start-btn">ENGAGE</button>
+            <button id="shop-btn" class="btn-sm">HANGAR</button>
+        </div>
+    </div>
+    <div id="shop" class="hidden">
+        <h1>HANGAR</h1>
+        <p id="shop-credits">&#9670; 0 CR</p>
+        <div id="shop-list"></div>
+        <button id="shop-back" class="btn-sm" style="margin-top:16px;">BACK</button>
     </div>
 </div>
 
@@ -51,6 +94,40 @@ const LIMIT = 0.86;       // how far the jet can roam in the trench
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 const overlay = document.getElementById("overlay");
+
+// ---------------- shop / persistence ----------------
+const SAVE_KEY = "trenchRunSave";
+const UPGRADES = [
+    { id: "hull",      ico: "&#128737;", name: "Reinforced Hull", max: 3, costs: [150, 400, 900],
+      desc: "+1 hull point per level (start with more lives)." },
+    { id: "agility",   ico: "&#9889;",   name: "Combat Thrusters", max: 3, costs: [120, 300, 650],
+      desc: "Snappier turning — dodge tighter, faster." },
+    { id: "shield",    ico: "&#128302;", name: "Ablative Shield", max: 3, costs: [120, 280, 600],
+      desc: "Longer invulnerability after taking a hit." },
+    { id: "targeting", ico: "&#127919;", name: "Targeting Computer", max: 3, costs: [150, 350, 750],
+      desc: "+50% near-miss combo bonus per level." },
+    { id: "income",    ico: "&#9670;",   name: "Salvage Drone", max: 3, costs: [200, 450, 1000],
+      desc: "+25% credits earned per run, per level." },
+];
+let save = { credits: 0, levels: {} };
+function loadSave() {
+    try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (raw) save = JSON.parse(raw);
+    } catch (e) {}
+    if (!save.levels) save.levels = {};
+    UPGRADES.forEach(u => { if (typeof save.levels[u.id] !== "number") save.levels[u.id] = 0; });
+}
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
+const lvl = id => save.levels[id] || 0;
+const nextCost = u => lvl(u.id) >= u.max ? null : u.costs[lvl(u.id)];
+
+// upgrade effects
+const maxHull       = () => 3 + lvl("hull");
+const agilityMult   = () => 1 + lvl("agility") * 0.18;
+const shieldDur     = () => 1.3 + lvl("shield") * 0.5;
+const targetingMult = () => 1 + lvl("targeting") * 0.5;
+const incomeMult    = () => 1 + lvl("income") * 0.25;
 
 const keys = {};
 let rafId = null;
@@ -82,17 +159,20 @@ function boom(freq = 220, dur = 0.4, vol = 0.3) {
 
 // ---------------- state ----------------
 let state = "title";
-let jet, obstacles, rings, particles;
-let speed, spawnT, spawnGap, distance, hull, invuln, shake, t;
+let jet, obstacles, rings, particles, floats;
+let speed, spawnT, spawnGap, distance, hull, invuln, shake, t, trenchOffset;
+let bonus, combo, comboTimer, bestCombo, laserAlert;
 
 function reset() {
-    jet = { x: 0, y: 0, vx: 0, vy: 0, roll: 0 };
+    jet = { x: 0, y: 0, vx: 0, vy: 0, roll: 0, pitch: 0 };
     obstacles = [];
     particles = [];
+    floats = [];
     rings = [];
     for (let i = 0; i < 22; i++) rings.push(ZF * i / 22);
-    speed = 0.6; spawnT = 0; spawnGap = 0.9;
-    distance = 0; hull = 3; invuln = 0; shake = 0; t = 0;
+    speed = 1.4; spawnT = 0; spawnGap = 0.70;
+    distance = 0; hull = maxHull(); invuln = 0; shake = 0; t = 0; trenchOffset = 0;
+    bonus = 0; combo = 0; comboTimer = 0; bestCombo = 0; laserAlert = 0;
 }
 
 // ---------------- projection ----------------
@@ -113,31 +193,80 @@ function poly(pts, fill, stroke, lw) {
 }
 
 // ---------------- obstacles ----------------
+const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+
+// difficulty waves: obstacle types unlock as the run progresses
+function obstacleMenu() {
+    const m = ["block", "block", "mpole"];
+    if (t > 4) m.push("boulder", "boulder");
+    if (t > 10) m.push("laser", "mpole");
+    if (t > 20) m.push("laser", "boulder");
+    return m;
+}
+
 function spawnObstacle() {
-    const r = Math.random();
-    if (r < 0.5) {
-        obstacles.push({ kind: "block", x: (Math.random() * 2 - 1) * 0.7, y: (Math.random() * 2 - 1) * 0.7,
-            z: ZF, size: 0.16, passed: false });
-    } else if (r < 0.78) {
-        // horizontal bar — fly above or below it
-        obstacles.push({ kind: "hbar", y: (Math.random() * 2 - 1) * 0.55, z: ZF, th: 0.16, passed: false });
-    } else {
-        // vertical bar — fly left or right of it
-        obstacles.push({ kind: "vbar", x: (Math.random() * 2 - 1) * 0.55, z: ZF, th: 0.16, passed: false });
+    const menu = obstacleMenu();
+    const kind = menu[Math.floor(Math.random() * menu.length)];
+    const o = { kind, z: ZF, passed: false, clock: 0, phase: rnd(0, Math.PI * 2), cx: 0, cy: 0, cpos: 0 };
+    if (kind === "block") {
+        o.x = rnd(-0.7, 0.7); o.y = rnd(-0.7, 0.7); o.size = 0.15;
+        o.cx = o.x; o.cy = o.y;
+    } else if (kind === "boulder") {
+        // rolling boulder on the floor, weaving side to side
+        o.base = rnd(-0.3, 0.3); o.amp = rnd(0.4, 0.72); o.freq = rnd(1.0, 1.9);
+        o.r = 0.17; o.y = 0.62; o.spin = 0;
+    } else if (kind === "mpole") {
+        // chunky pole sliding slowly across one axis
+        o.orient = Math.random() < 0.5 ? "v" : "h";
+        o.base = rnd(-0.4, 0.4); o.amp = rnd(0.22, 0.5); o.freq = rnd(0.5, 1.0); o.th = 0.13;
+    } else if (kind === "laser") {
+        // thin deadly beam sweeping fast across one axis (telegraphed)
+        o.orient = Math.random() < 0.5 ? "v" : "h";
+        o.base = 0; o.amp = 0.8; o.freq = rnd(1.3, 2.2); o.th = 0.06;
+    }
+    obstacles.push(o);
+}
+
+// recompute the obstacle's live position at its current clock
+function moveObstacle(o, dt) {
+    o.clock += dt;
+    if (o.kind === "boulder") {
+        o.cx = o.base + o.amp * Math.sin(o.freq * o.clock + o.phase);
+        o.cy = o.y; o.spin += speed * dt * 7;
+    } else if (o.kind === "mpole" || o.kind === "laser") {
+        o.cpos = o.base + o.amp * Math.sin(o.freq * o.clock + o.phase);
+        if (o.orient === "v") { o.cx = o.cpos; o.cy = 0; } else { o.cx = 0; o.cy = o.cpos; }
     }
 }
 
-function hitTest(o) {
-    if (o.kind === "block") return Math.abs(jet.x - o.x) < o.size + 0.08 && Math.abs(jet.y - o.y) < o.size + 0.08;
-    if (o.kind === "hbar") return Math.abs(jet.y - o.y) < o.th + 0.06;
-    if (o.kind === "vbar") return Math.abs(jet.x - o.x) < o.th + 0.06;
-    return false;
+// signed clearance between jet and obstacle surface (negative = overlap)
+function clearance(o) {
+    if (o.kind === "block") return Math.max(Math.abs(jet.x - o.cx) - o.size, Math.abs(jet.y - o.cy) - o.size);
+    if (o.kind === "boulder") return Math.hypot(jet.x - o.cx, jet.y - o.cy) - o.r;
+    if (o.kind === "mpole" || o.kind === "laser")
+        return (o.orient === "v" ? Math.abs(jet.x - o.cpos) : Math.abs(jet.y - o.cpos)) - o.th;
+    return 1;
+}
+function hitTest(o) { return clearance(o) < 0.07; }
+
+function registerNearMiss(o) {
+    const d = clearance(o);
+    if (d >= 0.07 && d < 0.20) {
+        combo++; comboTimer = 3;
+        bestCombo = Math.max(bestCombo, combo);
+        const pts = Math.round(50 * combo * targetingMult());
+        bonus += pts;
+        floats.push({ x: jet.x, y: jet.y - 0.12, life: 1.0,
+            text: combo > 1 ? `NEAR MISS x${combo}  +${pts}` : `NEAR MISS  +${pts}`, col: "#ffd700" });
+        boom(900, 0.06, 0.08);
+    }
 }
 
 function takeHit() {
-    hull--; invuln = 1.3; shake = 16;
+    hull--; invuln = shieldDur(); shake = 18;
+    combo = 0; comboTimer = 0;
     boom(180, 0.5, 0.35);
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < 30; i++) {
         const a = Math.random() * Math.PI * 2, sp = Math.random() * 5 + 1;
         particles.push({ x: jet.x, y: jet.y, vx: Math.cos(a) * sp * 0.02, vy: Math.sin(a) * sp * 0.02,
             life: 0.6 + Math.random() * 0.4, col: i % 2 ? "#ff5522" : "#ffcc33" });
@@ -148,8 +277,9 @@ function takeHit() {
 // ---------------- update ----------------
 function update(dt) {
     t += dt;
-    speed = Math.min(0.6 + t * 0.04, 2.2);
-    spawnGap = Math.max(0.9 - t * 0.012, 0.34);
+    trenchOffset += speed * dt;
+    speed = Math.min(1.4 + t * 0.10, 5.2);
+    spawnGap = Math.max(0.70 - t * 0.022, 0.18);
     distance += speed * dt * 120;
     if (invuln > 0) invuln -= dt;
     if (shake > 0) shake = Math.max(0, shake - dt * 30);
@@ -157,11 +287,17 @@ function update(dt) {
     // jet control
     const ax = (keys.ArrowRight || keys.d ? 1 : 0) - (keys.ArrowLeft || keys.a ? 1 : 0);
     const ay = (keys.ArrowDown || keys.s ? 1 : 0) - (keys.ArrowUp || keys.w ? 1 : 0);
-    jet.vx += (ax * 2.6 - jet.vx * 6) * dt;
-    jet.vy += (ay * 2.6 - jet.vy * 6) * dt;
+    const acc = 5.5 * agilityMult();
+    jet.vx += (ax * acc - jet.vx * 5) * dt;
+    jet.vy += (ay * acc - jet.vy * 5) * dt;
     jet.x = Math.max(-LIMIT, Math.min(LIMIT, jet.x + jet.vx * dt));
     jet.y = Math.max(-LIMIT, Math.min(LIMIT, jet.y + jet.vy * dt));
     jet.roll += (ax * 0.5 - jet.roll) * dt * 8;
+    jet.pitch += (ay * 0.35 - jet.pitch) * dt * 8;
+
+    // combo decay
+    if (comboTimer > 0) { comboTimer -= dt; if (comboTimer <= 0) combo = 0; }
+    if (laserAlert > 0) laserAlert = Math.max(0, laserAlert - dt * 2);
 
     // rings flow toward viewer
     for (let i = 0; i < rings.length; i++) {
@@ -174,10 +310,14 @@ function update(dt) {
     if (spawnT >= spawnGap) { spawnT = 0; spawnObstacle(); }
     for (let i = obstacles.length - 1; i >= 0; i--) {
         const o = obstacles[i];
+        moveObstacle(o, dt);
         o.z -= speed * dt;
+        // an incoming laser within striking range raises the on-screen alert tint
+        if (o.kind === "laser" && o.z > 0 && o.z < 0.45) laserAlert = Math.max(laserAlert, 1 - o.z / 0.45);
         if (!o.passed && o.z <= 0) {
             o.passed = true;
             if (invuln <= 0 && hitTest(o)) takeHit();
+            else registerNearMiss(o);
         }
         if (o.z < -0.25) obstacles.splice(i, 1);
     }
@@ -188,79 +328,265 @@ function update(dt) {
         p.life -= dt; p.x += p.vx; p.y += p.vy;
         if (p.life <= 0) particles.splice(i, 1);
     }
+
+    // floating score popups
+    for (let i = floats.length - 1; i >= 0; i--) {
+        const f = floats[i];
+        f.life -= dt; f.y -= dt * 0.25;
+        if (f.life <= 0) floats.splice(i, 1);
+    }
 }
 
 // ---------------- rendering ----------------
+// Returns how far (in y) the rocky rim protrudes above the wall baseline at depth z
+function rimBump(z, side) {
+    const ph = side * 2.7;
+    return 0.09 * Math.abs(Math.sin(z * 7.3 + ph))
+         + 0.05 * Math.abs(Math.sin(z * 15.1 + ph + 1.2))
+         + 0.03 * Math.abs(Math.sin(z * 29.7 + ph + 2.5));
+}
+
 function drawTrench() {
-    // sky above the trench
-    const sky = ctx.createLinearGradient(0, 0, 0, H);
-    sky.addColorStop(0, "#0b0b30"); sky.addColorStop(0.34, "#241652"); sky.addColorStop(0.5, "#05050e");
+    // === SKY ===
+    const sky = ctx.createLinearGradient(0, 0, 0, VPY + 60);
+    sky.addColorStop(0, "#07071c");
+    sky.addColorStop(0.5, "#11103a");
+    sky.addColorStop(1, "#201658");
     ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
-    // stars in the sky band
-    for (let i = 0; i < 60; i++) {
-        const sxp = (i * 137.5) % W, syp = (i * 53.3) % (VPY + 30);
-        ctx.fillStyle = `rgba(255,255,255,${0.15 + (i % 3) * 0.12})`;
-        ctx.fillRect(sxp, syp, 1.5, 1.5);
+
+    // Stars — scattered naturally via LCG offsets
+    for (let i = 0; i < 110; i++) {
+        const sx = ((i * 1619 + 7) % 997) / 997 * W;
+        const sy = ((i * 2311 + 13) % 997) / 997 * (VPY + 10);
+        const br = 0.12 + ((i * 397) % 100) / 100 * 0.55;
+        const r = i % 11 === 0 ? 1.5 : 1;
+        ctx.fillStyle = `rgba(200,215,255,${br})`;
+        ctx.fillRect(sx, sy, r, r);
     }
 
-    // corner anchors near (z=0) and far (z=ZF)
-    const nfl = project(-1, 1, 0), nfr = project(1, 1, 0);   // near floor L/R
-    const nrl = project(-1, -1, 0), nrr = project(1, -1, 0); // near rim L/R
+    // Horizon glow (nebula-like haze at the vanishing point)
+    const hGlow = ctx.createRadialGradient(VPX, VPY, 0, VPX, VPY, 220);
+    hGlow.addColorStop(0, "rgba(55,25,140,0.55)");
+    hGlow.addColorStop(0.5, "rgba(25,10,75,0.2)");
+    hGlow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = hGlow; ctx.fillRect(VPX - 220, VPY - 90, 440, 210);
+
+    // === CORNER ANCHORS ===
+    const nfl = project(-1, 1, 0), nfr = project(1, 1, 0);
+    const nrl = project(-1, -1, 0), nrr = project(1, -1, 0);
     const ffl = project(-1, 1, ZF), ffr = project(1, 1, ZF);
     const frl = project(-1, -1, ZF), frr = project(1, -1, ZF);
 
-    poly([nfl, nfr, ffr, ffl], "#0c1430");   // floor
-    poly([nfl, nrl, frl, ffl], "#111a3e");   // left wall
-    poly([nfr, nrr, frr, ffr], "#111a3e");   // right wall
+    // === FLOOR — gradient: sandy near, dark far ===
+    const flG = ctx.createLinearGradient(0, nfl.y, 0, ffl.y);
+    flG.addColorStop(0, "#0e1c35"); flG.addColorStop(1, "#04080f");
+    poly([nfl, nfr, ffr, ffl], flG);
 
-    // scrolling depth rungs: U cross-section (open top) at each ring depth
+    // Floor perspective grid
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(0,242,255,0.09)";
+    for (const nx of [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75]) {
+        const p = project(nx, 1, 0);
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(VPX, VPY); ctx.stroke();
+    }
+    // Cross-rungs on floor at ring depths
+    for (const z of rings.slice().sort((a, b) => b - a)) {
+        const fl = project(-1, 1, z), fr = project(1, 1, z);
+        const al = Math.max(0, 0.18 * (1 - z / ZF));
+        ctx.strokeStyle = `rgba(0,242,255,${al})`;
+        ctx.beginPath(); ctx.moveTo(fl.x, fl.y); ctx.lineTo(fr.x, fr.y); ctx.stroke();
+    }
+
+    // === LEFT WALL — gradient top-bright, bottom-dark ===
+    const lwG = ctx.createLinearGradient(0, nrl.y, 0, nfl.y);
+    lwG.addColorStop(0, "#1e304e"); lwG.addColorStop(0.4, "#0f1e3c"); lwG.addColorStop(1, "#07101e");
+    poly([nfl, nrl, frl, ffl], lwG);
+
+    // Left wall strata (rock-layer lines)
+    for (const [ny, al] of [[-0.6, 0.28], [-0.15, 0.22], [0.35, 0.16]]) {
+        const p0 = project(-1, ny, 0), pf = project(-1, ny, ZF);
+        ctx.strokeStyle = `rgba(80,140,220,${al})`; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(pf.x, pf.y); ctx.stroke();
+        const p0s = project(-1, ny + 0.04, 0), pfs = project(-1, ny + 0.04, ZF);
+        ctx.strokeStyle = `rgba(0,0,0,${al * 0.6})`;
+        ctx.beginPath(); ctx.moveTo(p0s.x, p0s.y); ctx.lineTo(pfs.x, pfs.y); ctx.stroke();
+    }
+
+    // === RIGHT WALL ===
+    const rwG = ctx.createLinearGradient(0, nrr.y, 0, nfr.y);
+    rwG.addColorStop(0, "#1a2c48"); rwG.addColorStop(0.4, "#0e1c38"); rwG.addColorStop(1, "#060e1a");
+    poly([nfr, nrr, frr, ffr], rwG);
+
+    for (const [ny, al] of [[-0.6, 0.25], [-0.15, 0.20], [0.35, 0.14]]) {
+        const p0 = project(1, ny, 0), pf = project(1, ny, ZF);
+        ctx.strokeStyle = `rgba(80,140,220,${al})`; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(pf.x, pf.y); ctx.stroke();
+        const p0s = project(1, ny + 0.04, 0), pfs = project(1, ny + 0.04, ZF);
+        ctx.strokeStyle = `rgba(0,0,0,${al * 0.6})`;
+        ctx.beginPath(); ctx.moveTo(p0s.x, p0s.y); ctx.lineTo(pfs.x, pfs.y); ctx.stroke();
+    }
+
+    // === ROCKY RIM — jagged 3D quads above the wall baseline, scrolling with terrain ===
+    const RIM = 28;
+    for (const side of [-1, 1]) {
+        const si = side < 0 ? 0 : 1;
+        for (let i = 0; i < RIM; i++) {
+            const z1 = ZF * i / RIM, z2 = ZF * (i + 1) / RIM;
+            const b1 = rimBump(z1 + trenchOffset, si);
+            const b2 = rimBump(z2 + trenchOffset, si);
+            const pT1 = project(side, -1 - b1, z1), pT2 = project(side, -1 - b2, z2);
+            const pB1 = project(side, -1, z1),       pB2 = project(side, -1, z2);
+            const darkness = 0.03 + 0.12 * (1 - z1 / ZF);
+            poly([pT1, pT2, pB2, pB1], `rgba(4,7,18,0.96)`, `rgba(4,7,18,${darkness})`, 0.5);
+        }
+        // Neon glow edge along the jagged rim top
+        ctx.strokeStyle = "rgba(0,242,255,0.38)"; ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let i = 0; i <= RIM; i++) {
+            const z = ZF * i / RIM;
+            const b = rimBump(z + trenchOffset, si);
+            const p = project(side, -1 - b, z);
+            i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+        }
+        ctx.stroke();
+    }
+
+    // === DEPTH RUNGS — U cross-section, brighter+thicker near ===
     for (const z of rings.slice().sort((a, b) => b - a)) {
         const a = project(-1, -1, z), b = project(-1, 1, z), c = project(1, 1, z), d = project(1, -1, z);
-        const al = Math.max(0, 0.5 * (1 - z / ZF));
-        ctx.strokeStyle = `rgba(0,242,255,${al})`; ctx.lineWidth = 1.5;
+        const al = Math.max(0, 0.42 * (1 - z / ZF));
+        const lw = Math.max(0.5, 1.6 * (1 - z / ZF));
+        ctx.strokeStyle = `rgba(0,242,255,${al})`; ctx.lineWidth = lw;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y);
         ctx.stroke();
     }
-    // bright longitudinal seams (floor edges + wall rims) running to the horizon
-    ctx.strokeStyle = "rgba(0,242,255,0.55)"; ctx.lineWidth = 2;
+
+    // Longitudinal seams to vanishing point
+    ctx.strokeStyle = "rgba(0,242,255,0.5)"; ctx.lineWidth = 2;
     for (const p of [nfl, nfr, nrl, nrr]) {
         ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(VPX, VPY); ctx.stroke();
     }
-    // faint floor lane lines
-    ctx.strokeStyle = "rgba(0,242,255,0.14)"; ctx.lineWidth = 1;
-    for (const nx of [-0.5, 0, 0.5]) {
-        const p = project(nx, 1, 0);
-        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(VPX, VPY); ctx.stroke();
-    }
+
+    // === ATMOSPHERIC HAZE — purple fog swallowing the far end ===
+    const fog = ctx.createRadialGradient(VPX, VPY, 8, VPX, VPY, 290);
+    fog.addColorStop(0, "rgba(12,6,48,0.80)");
+    fog.addColorStop(0.3, "rgba(6,3,24,0.35)");
+    fog.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = fog; ctx.fillRect(VPX - 290, VPY - 110, 580, 340);
 }
 
 function drawObstacle(o) {
     if (o.z <= 0) return;
     const sc = scaleAt(o.z);
-    const fade = Math.max(0.15, 1 - o.z / ZF);
+    const fade = Math.max(0.18, 1 - o.z / ZF);
     if (o.kind === "block") {
-        const s = o.size;
-        const pts = [project(o.x - s, o.y - s, o.z), project(o.x + s, o.y - s, o.z),
-                     project(o.x + s, o.y + s, o.z), project(o.x - s, o.y + s, o.z)];
+        // hazard cube with a back face for depth
+        const s = o.size, zb = o.z + 0.1;
+        const f = [project(o.cx - s, o.cy - s, o.z), project(o.cx + s, o.cy - s, o.z),
+                   project(o.cx + s, o.cy + s, o.z), project(o.cx - s, o.cy + s, o.z)];
+        const b = [project(o.cx - s, o.cy - s, zb), project(o.cx + s, o.cy - s, zb),
+                   project(o.cx + s, o.cy + s, zb), project(o.cx - s, o.cy + s, zb)];
+        poly([f[1], b[1], b[2], f[2]], `rgba(150,20,40,${fade})`);   // right side
+        poly([f[0], b[0], b[1], f[1]], `rgba(120,15,35,${fade})`);   // top side
         ctx.shadowBlur = 16 * sc; ctx.shadowColor = "#ff3355";
-        poly(pts, `rgba(255,60,90,${fade})`);
+        poly(f, `rgba(255,60,90,${fade})`);
         ctx.shadowBlur = 0;
-        poly(pts, null, `rgba(255,200,210,${fade})`, 2 * sc);
-    } else if (o.kind === "hbar") {
+        poly(f, null, `rgba(255,200,210,${fade})`, 2 * sc);
+        // hazard chevrons
+        ctx.strokeStyle = `rgba(20,0,5,${fade * 0.7})`; ctx.lineWidth = 2 * sc;
+        ctx.beginPath(); ctx.moveTo(f[0].x, (f[0].y + f[3].y) / 2); ctx.lineTo(f[1].x, (f[1].y + f[2].y) / 2); ctx.stroke();
+    } else if (o.kind === "boulder") {
+        const c = project(o.cx, o.cy, o.z);
+        const edge = project(o.cx + o.r, o.cy, o.z);
+        const rad = Math.max(2, Math.abs(edge.x - c.x));
+        // shadow on the floor
+        const fl = project(o.cx, 1, o.z);
+        ctx.fillStyle = `rgba(0,0,0,${0.35 * fade})`;
+        ctx.beginPath(); ctx.ellipse(fl.x, fl.y, rad * 0.9, rad * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+        // rocky sphere
+        const g = ctx.createRadialGradient(c.x - rad * 0.35, c.y - rad * 0.4, rad * 0.2, c.x, c.y, rad);
+        g.addColorStop(0, `rgba(150,140,128,${fade})`);
+        g.addColorStop(0.6, `rgba(96,86,76,${fade})`);
+        g.addColorStop(1, `rgba(44,38,33,${fade})`);
+        ctx.shadowBlur = 12 * sc; ctx.shadowColor = "rgba(0,0,0,0.6)";
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(c.x, c.y, rad, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+        // rotating surface cracks to show it rolling
+        ctx.strokeStyle = `rgba(30,24,20,${fade * 0.8})`; ctx.lineWidth = Math.max(1, 1.6 * sc);
+        for (let k = 0; k < 3; k++) {
+            const a = o.spin + k * 2.1;
+            ctx.beginPath();
+            ctx.arc(c.x, c.y, rad * (0.4 + k * 0.22), a, a + 1.5);
+            ctx.stroke();
+        }
+        ctx.strokeStyle = `rgba(20,16,14,${fade})`; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(c.x, c.y, rad, 0, Math.PI * 2); ctx.stroke();
+    } else if (o.kind === "mpole") {
+        // chunky metallic pole spanning one axis
         const th = o.th;
-        const pts = [project(-1, o.y - th, o.z), project(1, o.y - th, o.z),
-                     project(1, o.y + th, o.z), project(-1, o.y + th, o.z)];
-        ctx.shadowBlur = 14 * sc; ctx.shadowColor = "#ff8800";
-        poly(pts, `rgba(255,140,0,${fade})`);
+        let pts, gx0, gy0, gx1, gy1;
+        if (o.orient === "v") {
+            pts = [project(o.cpos - th, -1, o.z), project(o.cpos + th, -1, o.z),
+                   project(o.cpos + th, 1, o.z), project(o.cpos - th, 1, o.z)];
+            gx0 = pts[0].x; gy0 = 0; gx1 = pts[1].x; gy1 = 0;
+        } else {
+            pts = [project(-1, o.cpos - th, o.z), project(1, o.cpos - th, o.z),
+                   project(1, o.cpos + th, o.z), project(-1, o.cpos + th, o.z)];
+            gx0 = 0; gy0 = pts[0].y; gx1 = 0; gy1 = pts[2].y;
+        }
+        const g = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+        g.addColorStop(0, `rgba(70,80,96,${fade})`);
+        g.addColorStop(0.45, `rgba(176,188,205,${fade})`);
+        g.addColorStop(0.55, `rgba(200,212,228,${fade})`);
+        g.addColorStop(1, `rgba(60,70,86,${fade})`);
+        ctx.shadowBlur = 10 * sc; ctx.shadowColor = "rgba(0,0,0,0.5)";
+        poly(pts, g);
         ctx.shadowBlur = 0;
-    } else {
+        poly(pts, null, `rgba(230,240,255,${fade * 0.7})`, 1.5 * sc);
+        // warning collar bands
+        ctx.strokeStyle = `rgba(255,180,0,${fade})`; ctx.lineWidth = Math.max(1, 3 * sc);
+        for (const at of [-0.5, 0, 0.5]) {
+            let a, b;
+            if (o.orient === "v") { a = project(o.cpos - th, at, o.z); b = project(o.cpos + th, at, o.z); }
+            else { a = project(at, o.cpos - th, o.z); b = project(at, o.cpos + th, o.z); }
+            ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+    } else if (o.kind === "laser") {
         const th = o.th;
-        const pts = [project(o.x - th, -1, o.z), project(o.x + th, -1, o.z),
-                     project(o.x + th, 1, o.z), project(o.x - th, 1, o.z)];
-        ctx.shadowBlur = 14 * sc; ctx.shadowColor = "#ff8800";
-        poly(pts, `rgba(255,140,0,${fade})`);
-        ctx.shadowBlur = 0;
+        let pts;
+        if (o.orient === "v") {
+            pts = [project(o.cpos - th, -1, o.z), project(o.cpos + th, -1, o.z),
+                   project(o.cpos + th, 1, o.z), project(o.cpos - th, 1, o.z)];
+        } else {
+            pts = [project(-1, o.cpos - th, o.z), project(1, o.cpos - th, o.z),
+                   project(1, o.cpos + th, o.z), project(-1, o.cpos + th, o.z)];
+        }
+        if (o.z > 0.4) {
+            // telegraph: thin pulsing warning beam
+            const pulse = 0.25 + 0.25 * Math.abs(Math.sin(o.clock * 12));
+            // centerline only
+            let a, b;
+            if (o.orient === "v") { a = project(o.cpos, -1, o.z); b = project(o.cpos, 1, o.z); }
+            else { a = project(-1, o.cpos, o.z); b = project(1, o.cpos, o.z); }
+            ctx.strokeStyle = `rgba(255,40,60,${pulse * fade})`; ctx.lineWidth = 2;
+            ctx.setLineDash([10, 8]);
+            ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+            ctx.setLineDash([]);
+        } else {
+            // armed: bright bloom beam
+            const flick = 0.7 + 0.3 * Math.random();
+            ctx.shadowBlur = 26 * sc; ctx.shadowColor = "#ff2233";
+            poly(pts, `rgba(255,40,60,${0.55 * flick})`);
+            ctx.shadowBlur = 0;
+            // white-hot core
+            let a, b;
+            if (o.orient === "v") { a = project(o.cpos, -1, o.z); b = project(o.cpos, 1, o.z); }
+            else { a = project(-1, o.cpos, o.z); b = project(1, o.cpos, o.z); }
+            ctx.strokeStyle = `rgba(255,235,235,${flick})`; ctx.lineWidth = Math.max(1.5, 3 * sc);
+            ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
     }
 }
 
@@ -285,6 +611,7 @@ function drawJet() {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(jet.roll * 0.5);
+    ctx.scale(1, 1 - jet.pitch * 0.12);   // subtle climb/dive foreshortening
     const s = 30;
     const flick = Math.random();
 
@@ -368,22 +695,53 @@ function drawParticles() {
     ctx.globalAlpha = 1;
 }
 
+function drawFloats() {
+    ctx.textAlign = "center";
+    ctx.font = "bold 13px Orbitron";
+    for (const f of floats) {
+        const pr = project(f.x, f.y, 0);
+        ctx.globalAlpha = Math.max(0, Math.min(1, f.life * 1.4));
+        ctx.fillStyle = f.col;
+        ctx.shadowBlur = 8; ctx.shadowColor = f.col;
+        ctx.fillText(f.text, pr.x, pr.y);
+        ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1; ctx.textAlign = "left";
+}
+
+function totalScore() { return Math.floor(distance) + bonus; }
+
 function drawHUD() {
+    // score (distance + near-miss bonus)
     ctx.fillStyle = "#fff"; ctx.font = "bold 22px Orbitron"; ctx.textAlign = "left";
     ctx.shadowBlur = 8; ctx.shadowColor = "#00f2ff";
-    ctx.fillText(Math.floor(distance).toString().padStart(6, "0"), 18, 36);
+    ctx.fillText(totalScore().toString().padStart(6, "0"), 18, 36);
     ctx.shadowBlur = 0;
     ctx.fillStyle = "#7a86a8"; ctx.font = "10px Orbitron";
-    ctx.fillText("DISTANCE", 18, 50);
+    ctx.fillText("SCORE", 18, 50);
     // speed
     ctx.textAlign = "right";
     ctx.fillStyle = "#fff"; ctx.font = "bold 18px Orbitron";
-    ctx.fillText(Math.floor(speed / 2.2 * 1800) + " KN", W - 18, 34);
+    ctx.fillText(Math.floor(speed / 5.2 * 1800) + " KN", W - 18, 34);
     ctx.fillStyle = "#7a86a8"; ctx.font = "10px Orbitron";
     ctx.fillText("THROTTLE", W - 18, 48);
+    // combo meter (center top)
+    if (combo > 0) {
+        ctx.textAlign = "center";
+        const a = Math.max(0.25, comboTimer / 3);
+        ctx.fillStyle = `rgba(255,215,0,${a})`;
+        ctx.font = "bold 20px Orbitron";
+        ctx.shadowBlur = 10; ctx.shadowColor = "#ffd700";
+        ctx.fillText("COMBO x" + combo, W / 2, 34);
+        ctx.shadowBlur = 0;
+        // draining bar
+        ctx.fillStyle = "rgba(255,215,0,0.18)"; ctx.fillRect(W / 2 - 60, 42, 120, 4);
+        ctx.fillStyle = "#ffd700"; ctx.fillRect(W / 2 - 60, 42, 120 * (comboTimer / 3), 4);
+    }
     // hull
     ctx.textAlign = "left";
-    for (let i = 0; i < 3; i++) {
+    const hp = maxHull();
+    for (let i = 0; i < hp; i++) {
         ctx.fillStyle = i < hull ? "#00ff88" : "rgba(255,255,255,0.15)";
         ctx.fillRect(18 + i * 22, H - 30, 16, 14);
     }
@@ -400,7 +758,15 @@ function render() {
     obstacles.slice().sort((a, b) => b.z - a.z).forEach(drawObstacle);
     drawParticles();
     drawJet();
+    drawFloats();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // laser-incoming red vignette
+    if (laserAlert > 0.01) {
+        const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.75);
+        v.addColorStop(0, "rgba(255,0,0,0)");
+        v.addColorStop(1, `rgba(255,0,0,${0.32 * laserAlert})`);
+        ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+    }
     drawHUD();
 }
 
@@ -434,20 +800,78 @@ function startGame() {
 function gameOver() {
     state = "over";
     if (engine) engine.g.gain.value = 0;
+    const earned = Math.max(1, Math.round(totalScore() / 8 * incomeMult()));
+    save.credits += earned;
+    persist();
+    refreshCredits();
     document.getElementById("ov-title").textContent = "WRECKED";
-    document.getElementById("ov-sub").textContent = "Distance " + Math.floor(distance) + " — nice flying";
+    document.getElementById("ov-sub").innerHTML =
+        "Score " + totalScore() + "  &middot;  Best combo x" + bestCombo +
+        "<br><span style='color:var(--gold)'>+" + earned + " CR earned</span>";
     document.getElementById("start-btn").textContent = "RE-ENGAGE";
     overlay.classList.remove("hidden");
 }
 
+// ---------------- shop UI ----------------
+const shopEl = document.getElementById("shop");
+const shopListEl = document.getElementById("shop-list");
+function refreshCredits() {
+    const txt = "◆ " + save.credits + " CR";
+    document.getElementById("credits").textContent = txt;
+    document.getElementById("shop-credits").textContent = txt;
+}
+function renderShop() {
+    refreshCredits();
+    shopListEl.innerHTML = "";
+    UPGRADES.forEach(u => {
+        const level = lvl(u.id), cost = nextCost(u);
+        const pips = Array.from({ length: u.max }, (_, i) =>
+            i < level ? "<span>&#9632;</span>" : "<span class='off'>&#9632;</span>").join(" ");
+        let cls, label;
+        if (cost === null) { cls = "maxed"; label = "MAXED"; }
+        else if (save.credits >= cost) { cls = "afford"; label = "&#9670; " + cost; }
+        else { cls = "poor"; label = "&#9670; " + cost; }
+        const item = document.createElement("div");
+        item.className = "shop-item";
+        item.innerHTML =
+            `<div class="ico">${u.ico}</div>
+             <div class="info">
+                <div class="nm">${u.name}</div>
+                <div class="ds">${u.desc}</div>
+                <div class="pips">${pips}</div>
+             </div>
+             <button class="buy btn-sm ${cls}" data-id="${u.id}">${label}</button>`;
+        shopListEl.appendChild(item);
+    });
+    shopListEl.querySelectorAll(".buy.afford").forEach(b =>
+        b.addEventListener("click", () => buyUpgrade(b.dataset.id)));
+}
+function buyUpgrade(id) {
+    const u = UPGRADES.find(x => x.id === id);
+    const cost = nextCost(u);
+    if (cost === null || save.credits < cost) return;
+    save.credits -= cost;
+    save.levels[id] = lvl(id) + 1;
+    persist();
+    boom(700, 0.08, 0.12);
+    renderShop();
+}
+function openShop() { renderShop(); overlay.classList.add("hidden"); shopEl.classList.remove("hidden"); }
+function closeShop() { shopEl.classList.add("hidden"); overlay.classList.remove("hidden"); }
+
 document.getElementById("start-btn").addEventListener("click", startGame);
+document.getElementById("shop-btn").addEventListener("click", () => { initAudio(); openShop(); });
+document.getElementById("shop-back").addEventListener("click", closeShop);
 window.addEventListener("keydown", e => {
     keys[e.key] = true;
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
-    if ((e.key === "Enter" || e.key === " ") && state !== "playing") startGame();
+    if ((e.key === "Enter" || e.key === " ") && state !== "playing" && shopEl.classList.contains("hidden")) startGame();
+    if (e.key === "Escape" && !shopEl.classList.contains("hidden")) closeShop();
 });
 window.addEventListener("keyup", e => { keys[e.key] = false; });
 
+loadSave();
+refreshCredits();
 reset();
 render();
 </script>
