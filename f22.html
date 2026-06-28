@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trench Run: F-22 Canyon</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; }
+    #overlay { position: absolute; inset: 0; background: rgba(2,2,12,0.88);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; border-radius: 6px; z-index: 5; }
+    #overlay.hidden { display: none; }
+    h1 { font-size: 3rem; font-weight: 900; font-style: italic; color: #fff;
+        text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    #ov-sub { font-size: 0.95rem; opacity: 0.85; margin-bottom: 8px; letter-spacing: 1px; }
+    #ov-keys { font-size: 0.72rem; opacity: 0.6; line-height: 1.9; margin-bottom: 24px; letter-spacing: 1px; }
+    #ov-keys b { color: var(--neon-blue); opacity: 1; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue);
+        border-radius: 10px; padding: 14px 44px; font-family: 'Orbitron'; font-size: 1.2rem;
+        font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="800" height="600"></canvas>
+    <div id="overlay">
+        <h1 id="ov-title">TRENCH RUN</h1>
+        <p id="ov-sub">F-22 canyon assault</p>
+        <p id="ov-keys"><b>&larr; &uarr; &darr; &rarr;</b> / <b>WASD</b> fly &nbsp;&middot;&nbsp; dodge the obstacles &nbsp;&middot;&nbsp; survive</p>
+        <button id="start-btn">ENGAGE</button>
+    </div>
+</div>
+
+<script>
+const W = 800, H = 600, M = 44;
+const PP = 2.6;                       // perspective strength
+const HX = W / 2 - M, HY = H / 2 - M; // near-plane half extents
+const LIMIT = 0.86;                   // how far the jet can roam in the trench
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const overlay = document.getElementById("overlay");
+
+const keys = {};
+let rafId = null;
+function scheduleFrame() { if (rafId !== null) cancelAnimationFrame(rafId); rafId = requestAnimationFrame(loop); }
+
+// ---------------- audio ----------------
+let AC = null, engine = null;
+function initAudio() {
+    if (AC) { AC.resume(); return; }
+    try {
+        AC = new (window.AudioContext || window.webkitAudioContext)();
+        const o = AC.createOscillator(), f = AC.createBiquadFilter(), g = AC.createGain();
+        o.type = "sawtooth"; f.type = "lowpass"; f.frequency.value = 380; g.gain.value = 0;
+        o.connect(f); f.connect(g); g.connect(AC.destination); o.start();
+        engine = { o, f, g };
+    } catch (e) {}
+}
+function boom(freq = 220, dur = 0.4, vol = 0.3) {
+    if (!AC) return;
+    try {
+        const n = (AC.sampleRate * dur) | 0, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0);
+        for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+        const s = AC.createBufferSource(); s.buffer = b;
+        const fl = AC.createBiquadFilter(); fl.type = "lowpass"; fl.frequency.value = freq * 4;
+        const g = AC.createGain(); g.gain.value = vol;
+        s.connect(fl); fl.connect(g); g.connect(AC.destination); s.start();
+    } catch (e) {}
+}
+
+// ---------------- state ----------------
+let state = "title";
+let jet, obstacles, rings, particles;
+let speed, spawnT, spawnGap, distance, hull, invuln, shake, t;
+
+function reset() {
+    jet = { x: 0, y: 0, vx: 0, vy: 0, roll: 0 };
+    obstacles = [];
+    particles = [];
+    rings = [];
+    for (let i = 0; i < 22; i++) rings.push(1.4 * i / 22);
+    speed = 0.6; spawnT = 0; spawnGap = 0.9;
+    distance = 0; hull = 3; invuln = 0; shake = 0; t = 0;
+}
+
+// ---------------- projection ----------------
+const scaleAt = z => 1 / (1 + z * PP);
+function project(nx, ny, z) {
+    const sc = scaleAt(z);
+    return { x: W / 2 + nx * HX * sc, y: H / 2 + ny * HY * sc, sc };
+}
+
+// ---------------- obstacles ----------------
+function spawnObstacle() {
+    const r = Math.random();
+    if (r < 0.5) {
+        obstacles.push({ kind: "block", x: (Math.random() * 2 - 1) * 0.7, y: (Math.random() * 2 - 1) * 0.7,
+            z: 1.4, size: 0.16, passed: false });
+    } else if (r < 0.78) {
+        // horizontal bar — fly above or below it
+        obstacles.push({ kind: "hbar", y: (Math.random() * 2 - 1) * 0.55, z: 1.4, th: 0.16, passed: false });
+    } else {
+        // vertical bar — fly left or right of it
+        obstacles.push({ kind: "vbar", x: (Math.random() * 2 - 1) * 0.55, z: 1.4, th: 0.16, passed: false });
+    }
+}
+
+function hitTest(o) {
+    if (o.kind === "block") return Math.abs(jet.x - o.x) < o.size + 0.08 && Math.abs(jet.y - o.y) < o.size + 0.08;
+    if (o.kind === "hbar") return Math.abs(jet.y - o.y) < o.th + 0.06;
+    if (o.kind === "vbar") return Math.abs(jet.x - o.x) < o.th + 0.06;
+    return false;
+}
+
+function takeHit() {
+    hull--; invuln = 1.3; shake = 16;
+    boom(180, 0.5, 0.35);
+    for (let i = 0; i < 26; i++) {
+        const a = Math.random() * Math.PI * 2, sp = Math.random() * 5 + 1;
+        particles.push({ x: jet.x, y: jet.y, vx: Math.cos(a) * sp * 0.02, vy: Math.sin(a) * sp * 0.02,
+            life: 0.6 + Math.random() * 0.4, col: i % 2 ? "#ff5522" : "#ffcc33" });
+    }
+    if (hull <= 0) gameOver();
+}
+
+// ---------------- update ----------------
+function update(dt) {
+    t += dt;
+    speed = Math.min(0.6 + t * 0.04, 2.2);
+    spawnGap = Math.max(0.9 - t * 0.012, 0.34);
+    distance += speed * dt * 120;
+    if (invuln > 0) invuln -= dt;
+    if (shake > 0) shake = Math.max(0, shake - dt * 30);
+
+    // jet control
+    const ax = (keys.ArrowRight || keys.d ? 1 : 0) - (keys.ArrowLeft || keys.a ? 1 : 0);
+    const ay = (keys.ArrowDown || keys.s ? 1 : 0) - (keys.ArrowUp || keys.w ? 1 : 0);
+    jet.vx += (ax * 2.6 - jet.vx * 6) * dt;
+    jet.vy += (ay * 2.6 - jet.vy * 6) * dt;
+    jet.x = Math.max(-LIMIT, Math.min(LIMIT, jet.x + jet.vx * dt));
+    jet.y = Math.max(-LIMIT, Math.min(LIMIT, jet.y + jet.vy * dt));
+    jet.roll += (ax * 0.5 - jet.roll) * dt * 8;
+
+    // rings flow toward viewer
+    for (let i = 0; i < rings.length; i++) {
+        rings[i] -= speed * dt;
+        if (rings[i] < 0) rings[i] += 1.4;
+    }
+
+    // obstacles
+    spawnT += dt;
+    if (spawnT >= spawnGap) { spawnT = 0; spawnObstacle(); }
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        const o = obstacles[i];
+        o.z -= speed * dt;
+        if (!o.passed && o.z <= 0) {
+            o.passed = true;
+            if (invuln <= 0 && hitTest(o)) takeHit();
+        }
+        if (o.z < -0.25) obstacles.splice(i, 1);
+    }
+
+    // particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.life -= dt; p.x += p.vx; p.y += p.vy;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+}
+
+// ---------------- rendering ----------------
+function drawTunnel() {
+    const g = ctx.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, 460);
+    g.addColorStop(0, "#0a0a22"); g.addColorStop(1, "#020208");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    // depth rings (sorted far -> near so nearer overdraw)
+    const sorted = rings.slice().sort((a, b) => b - a);
+    for (const z of sorted) {
+        const sc = scaleAt(z);
+        const hw = HX * sc, hh = HY * sc;
+        const alpha = Math.max(0, 0.5 * (1 - z / 1.4));
+        ctx.strokeStyle = `rgba(0,242,255,${alpha})`;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(W / 2 - hw, H / 2 - hh, hw * 2, hh * 2);
+    }
+    // wall seam lines from screen corners to the vanishing point
+    ctx.strokeStyle = "rgba(0,242,255,0.18)"; ctx.lineWidth = 1.5;
+    for (const [cx, cy] of [[M, M], [W - M, M], [M, H - M], [W - M, H - M]]) {
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(W / 2, H / 2); ctx.stroke();
+    }
+}
+
+function drawObstacle(o) {
+    if (o.z <= 0) return;
+    const sc = scaleAt(o.z);
+    const fade = Math.max(0.15, 1 - o.z / 1.4);
+    if (o.kind === "block") {
+        const p = project(o.x, o.y, o.z);
+        const s = o.size * HX * sc;
+        ctx.fillStyle = `rgba(255,60,90,${fade})`;
+        ctx.shadowBlur = 16 * sc; ctx.shadowColor = "#ff3355";
+        ctx.fillRect(p.x - s, p.y - s, s * 2, s * 2);
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = `rgba(255,200,210,${fade})`; ctx.lineWidth = 2 * sc;
+        ctx.strokeRect(p.x - s, p.y - s, s * 2, s * 2);
+    } else if (o.kind === "hbar") {
+        const left = project(-1, o.y, o.z), right = project(1, o.y, o.z);
+        const th = o.th * HY * sc;
+        ctx.fillStyle = `rgba(255,140,0,${fade})`;
+        ctx.shadowBlur = 14 * sc; ctx.shadowColor = "#ff8800";
+        ctx.fillRect(left.x, left.y - th, right.x - left.x, th * 2);
+        ctx.shadowBlur = 0;
+    } else {
+        const top = project(o.x, -1, o.z), bot = project(o.x, 1, o.z);
+        const th = o.th * HX * sc;
+        ctx.fillStyle = `rgba(255,140,0,${fade})`;
+        ctx.shadowBlur = 14 * sc; ctx.shadowColor = "#ff8800";
+        ctx.fillRect(top.x - th, top.y, th * 2, bot.y - top.y);
+        ctx.shadowBlur = 0;
+    }
+}
+
+function drawJet() {
+    const p = project(jet.x, jet.y, 0);
+    if (invuln > 0 && Math.floor(invuln * 20) % 2 === 0) return; // blink while hit
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(jet.roll * 0.5);
+    const s = 26;
+    // afterburners
+    ctx.fillStyle = "rgba(0,200,255,0.9)";
+    ctx.shadowBlur = 18; ctx.shadowColor = "#00ccff";
+    ctx.beginPath(); ctx.ellipse(-s * 0.28, s * 0.5, s * 0.13, s * 0.3 + Math.random() * 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.28, s * 0.5, s * 0.13, s * 0.3 + Math.random() * 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    // swept wings
+    ctx.fillStyle = "#3a4a66";
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.2); ctx.lineTo(-s, s * 0.35); ctx.lineTo(-s * 0.25, s * 0.4); ctx.lineTo(0, s * 0.1);
+    ctx.lineTo(s * 0.25, s * 0.4); ctx.lineTo(s, s * 0.35); ctx.closePath(); ctx.fill();
+    // fuselage
+    ctx.fillStyle = "#5a6a86";
+    ctx.beginPath();
+    ctx.moveTo(0, -s); ctx.lineTo(-s * 0.22, s * 0.5); ctx.lineTo(s * 0.22, s * 0.5); ctx.closePath(); ctx.fill();
+    // twin tails
+    ctx.strokeStyle = "#8aa"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-s * 0.12, 0); ctx.lineTo(-s * 0.3, s * 0.3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.12, 0); ctx.lineTo(s * 0.3, s * 0.3); ctx.stroke();
+    // canopy
+    ctx.fillStyle = "#bfe9ff";
+    ctx.beginPath(); ctx.ellipse(0, -s * 0.35, s * 0.1, s * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+}
+
+function drawParticles() {
+    for (const p of particles) {
+        const pr = project(p.x, p.y, 0);
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.fillStyle = p.col;
+        ctx.fillRect(pr.x - 3, pr.y - 3, 6, 6);
+    }
+    ctx.globalAlpha = 1;
+}
+
+function drawHUD() {
+    ctx.fillStyle = "#fff"; ctx.font = "bold 22px Orbitron"; ctx.textAlign = "left";
+    ctx.shadowBlur = 8; ctx.shadowColor = "#00f2ff";
+    ctx.fillText(Math.floor(distance).toString().padStart(6, "0"), 18, 36);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#7a86a8"; ctx.font = "10px Orbitron";
+    ctx.fillText("DISTANCE", 18, 50);
+    // speed
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#fff"; ctx.font = "bold 18px Orbitron";
+    ctx.fillText(Math.floor(speed / 2.2 * 1800) + " KN", W - 18, 34);
+    ctx.fillStyle = "#7a86a8"; ctx.font = "10px Orbitron";
+    ctx.fillText("THROTTLE", W - 18, 48);
+    // hull
+    ctx.textAlign = "left";
+    for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = i < hull ? "#00ff88" : "rgba(255,255,255,0.15)";
+        ctx.fillRect(18 + i * 22, H - 30, 16, 14);
+    }
+    ctx.fillStyle = "#7a86a8"; ctx.font = "10px Orbitron";
+    ctx.fillText("HULL", 18, H - 36);
+    ctx.textAlign = "left";
+}
+
+function render() {
+    const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
+    ctx.setTransform(1, 0, 0, 1, sx, sy);
+    drawTunnel();
+    // far obstacles first
+    obstacles.slice().sort((a, b) => b.z - a.z).forEach(drawObstacle);
+    drawParticles();
+    drawJet();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    drawHUD();
+}
+
+// ---------------- loop ----------------
+let lastT = 0;
+function loop(ts) {
+    rafId = null;
+    const dt = Math.min((ts - lastT) / 1000, 0.05);
+    lastT = ts;
+    if (state === "playing") {
+        update(dt);
+        if (engine) {
+            engine.g.gain.value = 0.04;
+            engine.o.frequency.value = 60 + speed * 40;
+            engine.f.frequency.value = 300 + speed * 500;
+        }
+    }
+    render();
+    if (state === "playing") scheduleFrame();
+}
+
+function startGame() {
+    initAudio();
+    reset();
+    state = "playing";
+    overlay.classList.add("hidden");
+    lastT = performance.now();
+    scheduleFrame();
+}
+
+function gameOver() {
+    state = "over";
+    if (engine) engine.g.gain.value = 0;
+    document.getElementById("ov-title").textContent = "WRECKED";
+    document.getElementById("ov-sub").textContent = "Distance " + Math.floor(distance) + " — nice flying";
+    document.getElementById("start-btn").textContent = "RE-ENGAGE";
+    overlay.classList.remove("hidden");
+}
+
+document.getElementById("start-btn").addEventListener("click", startGame);
+window.addEventListener("keydown", e => {
+    keys[e.key] = true;
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+    if ((e.key === "Enter" || e.key === " ") && state !== "playing") startGame();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+
+reset();
+render();
+</script>
+</body>
+</html>
