@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Island Tag</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.88);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.hidden { display: none; }
+    h1 { font-size: 2.5rem; font-weight: 900; font-style: italic; color: #fff;
+        text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.9rem; opacity: 0.85; margin-bottom: 8px; letter-spacing: 1px; }
+    .keys { font-size: 0.72rem; opacity: 0.6; line-height: 1.9; margin-bottom: 22px; letter-spacing: 1px; }
+    .keys b { color: var(--neon-blue); opacity: 1; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue);
+        border-radius: 10px; padding: 13px 40px; font-family: 'Orbitron'; font-size: 1.1rem;
+        font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    .stat { color: #fff; font-size: 1.05rem; margin-bottom: 14px; letter-spacing: 1px; }
+    .stat span { color: var(--gold); text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="640" height="640"></canvas>
+    <div id="menu" class="panel">
+        <h1>ISLAND TAG</h1>
+        <p class="sub">Don't get tagged. Survive the swarm.</p>
+        <p class="keys"><b>WASD</b> / <b>ARROWS</b> run &nbsp;&middot;&nbsp; <b>SHIFT</b> sprint (uses stamina)<br>stay on the island &mdash; the chasers can't swim either</p>
+        <button id="start-btn">RUN</button>
+    </div>
+    <div id="over" class="panel hidden">
+        <h1>TAGGED!</h1>
+        <p class="stat">SURVIVED <span id="final-time">0</span>s</p>
+        <p class="stat">BEST <span id="best-time">0</span>s</p>
+        <button id="retry-btn">RUN AGAIN</button>
+    </div>
+</div>
+
+<script>
+const W = 640, H = 640, PI2 = Math.PI * 2;
+const CX = W / 2, CY = H / 2, ISLAND_R = 290;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const HI_KEY = "islandTagBest";
+
+let player, taggers, time, spawnT, stamina, state = "menu";
+let best = parseFloat(localStorage.getItem(HI_KEY) || "0");
+const keys = {};
+
+function reset() {
+    player = { x: CX, y: CY, r: 13, speed: 205 };
+    taggers = [];
+    time = 0; spawnT = 0; stamina = 1;
+    addTagger(); addTagger();
+}
+function addTagger() {
+    const a = Math.random() * PI2;
+    taggers.push({ x: CX + Math.cos(a) * (ISLAND_R - 30), y: CY + Math.sin(a) * (ISLAND_R - 30),
+        r: 14, speed: 120 + Math.random() * 20, wob: Math.random() * PI2 });
+}
+function confine(e) {
+    const dx = e.x - CX, dy = e.y - CY, d = Math.hypot(dx, dy), max = ISLAND_R - e.r;
+    if (d > max) { e.x = CX + dx / d * max; e.y = CY + dy / d * max; }
+}
+
+function update(dt) {
+    time += dt;
+    // player move
+    let dx = (keys.d || keys.ArrowRight ? 1 : 0) - (keys.a || keys.ArrowLeft ? 1 : 0);
+    let dy = (keys.s || keys.ArrowDown ? 1 : 0) - (keys.w || keys.ArrowUp ? 1 : 0);
+    const sprinting = (keys.Shift) && stamina > 0 && (dx || dy);
+    if (sprinting) { stamina = Math.max(0, stamina - dt * 0.5); } else { stamina = Math.min(1, stamina + dt * 0.3); }
+    const sp = player.speed * (sprinting ? 1.6 : 1);
+    if (dx || dy) { const m = Math.hypot(dx, dy); player.x += dx / m * sp * dt; player.y += dy / m * sp * dt; }
+    confine(player);
+
+    // difficulty: new tagger every 11s, all speed up slowly
+    spawnT += dt;
+    if (spawnT >= 11) { spawnT = 0; addTagger(); }
+    const boost = 1 + time * 0.012;
+
+    for (const t of taggers) {
+        const a = Math.atan2(player.y - t.y, player.x - t.x);
+        t.wob += dt * 3;
+        const wob = Math.sin(t.wob) * 0.25;
+        t.x += Math.cos(a + wob) * t.speed * boost * dt;
+        t.y += Math.sin(a + wob) * t.speed * boost * dt;
+        confine(t);
+        if ((t.x - player.x) ** 2 + (t.y - player.y) ** 2 < (t.r + player.r) ** 2) gameOver();
+    }
+}
+
+function gameOver() {
+    state = "over";
+    best = Math.max(best, time);
+    localStorage.setItem(HI_KEY, best.toFixed(1));
+    document.getElementById("final-time").textContent = time.toFixed(1);
+    document.getElementById("best-time").textContent = best.toFixed(1);
+    document.getElementById("over").classList.remove("hidden");
+}
+
+function drawFace(x, y, r, bodyCol, angry) {
+    ctx.fillStyle = bodyCol;
+    ctx.shadowBlur = 12; ctx.shadowColor = bodyCol;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, PI2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(x - r * 0.35, y - r * 0.2, r * 0.26, 0, PI2);
+    ctx.arc(x + r * 0.35, y - r * 0.2, r * 0.26, 0, PI2); ctx.fill();
+    ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.2, r * 0.12, 0, PI2);
+    ctx.arc(x + r * 0.4, y - r * 0.2, r * 0.12, 0, PI2); ctx.fill();
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (angry) { ctx.arc(x, y + r * 0.5, r * 0.4, Math.PI, PI2); }   // frown
+    else { ctx.arc(x, y + r * 0.1, r * 0.4, 0.15 * Math.PI, 0.85 * Math.PI); }   // smile
+    ctx.stroke();
+}
+
+function draw() {
+    // water
+    const water = ctx.createLinearGradient(0, 0, 0, H);
+    water.addColorStop(0, "#0a3b6b"); water.addColorStop(1, "#062443");
+    ctx.fillStyle = water; ctx.fillRect(0, 0, W, H);
+    // waves
+    ctx.strokeStyle = "rgba(120,180,230,0.18)"; ctx.lineWidth = 1;
+    const tt = Date.now() / 600;
+    for (let y = 30; y < H; y += 44) {
+        ctx.beginPath();
+        for (let x = 0; x <= W; x += 16) ctx.lineTo(x, y + Math.sin(x / 40 + tt + y) * 4);
+        ctx.stroke();
+    }
+    // island: beach ring + grass
+    ctx.fillStyle = "#e6d6a8"; ctx.beginPath(); ctx.arc(CX, CY, ISLAND_R + 14, 0, PI2); ctx.fill();
+    const g = ctx.createRadialGradient(CX, CY, 40, CX, CY, ISLAND_R);
+    g.addColorStop(0, "#3f9b4e"); g.addColorStop(1, "#2c7a3c");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(CX, CY, ISLAND_R, 0, PI2); ctx.fill();
+    // palm dots for flavor
+    ctx.fillStyle = "rgba(20,60,30,0.5)";
+    for (let i = 0; i < 9; i++) {
+        const a = i / 9 * PI2, rr = ISLAND_R * 0.78;
+        ctx.beginPath(); ctx.arc(CX + Math.cos(a) * rr, CY + Math.sin(a) * rr, 10, 0, PI2); ctx.fill();
+    }
+    // characters
+    taggers.forEach(t => drawFace(t.x, t.y, t.r, "#ff3355", true));
+    if (state === "playing") drawFace(player.x, player.y, player.r, "#00f2ff", false);
+    // HUD
+    ctx.fillStyle = "#fff"; ctx.font = "bold 22px Orbitron"; ctx.textAlign = "left";
+    ctx.shadowBlur = 8; ctx.shadowColor = "#00f2ff";
+    ctx.fillText(time.toFixed(1) + "s", 16, 32); ctx.shadowBlur = 0;
+    ctx.fillStyle = "#7a86a8"; ctx.font = "10px Orbitron"; ctx.fillText("SURVIVED", 16, 48);
+    ctx.textAlign = "right"; ctx.fillStyle = "#ffd700"; ctx.font = "12px Orbitron";
+    ctx.fillText("CHASERS " + taggers.length, W - 16, 30); ctx.textAlign = "left";
+    // stamina bar
+    ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.fillRect(16, H - 24, 160, 8);
+    ctx.fillStyle = stamina > 0.25 ? "#00ff88" : "#ff3355"; ctx.fillRect(16, H - 24, 160 * stamina, 8);
+    ctx.fillStyle = "#7a86a8"; ctx.font = "9px Orbitron"; ctx.fillText("STAMINA", 16, H - 30);
+}
+
+let last = 0;
+function loop(ts) {
+    const dt = Math.min((ts - last) / 1000, 0.05); last = ts;
+    if (state === "playing") update(dt);
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function start() {
+    reset(); state = "playing";
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+}
+
+window.addEventListener("keydown", e => {
+    keys[e.key] = true;
+    if (e.key === "Shift") keys.Shift = true;
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; if (e.key === "Shift") keys.Shift = false; });
+document.getElementById("start-btn").addEventListener("click", start);
+document.getElementById("retry-btn").addEventListener("click", start);
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

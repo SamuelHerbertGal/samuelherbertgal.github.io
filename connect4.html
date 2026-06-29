@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connect Four</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; cursor: pointer; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.9);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.hidden { display: none; }
+    h1 { font-size: 2.4rem; font-weight: 900; font-style: italic; color: #fff;
+        text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 10px; }
+    .sub { font-size: 0.9rem; opacity: 0.85; margin-bottom: 22px; letter-spacing: 1px; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue);
+        border-radius: 10px; padding: 13px 40px; font-family: 'Orbitron'; font-size: 1.1rem;
+        font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="532" height="516"></canvas>
+    <div id="menu" class="panel">
+        <h1>CONNECT FOUR</h1>
+        <p class="sub">Drop discs &middot; line up four &middot; beat the CPU</p>
+        <button id="start-btn">PLAY</button>
+    </div>
+    <div id="over" class="panel hidden">
+        <h1 id="over-title">YOU WIN</h1>
+        <button id="retry-btn">REMATCH</button>
+    </div>
+</div>
+
+<script>
+const COLS = 7, ROWS = 6, CELL = 76, PAD = 14;
+const W = COLS * CELL, H = ROWS * CELL + 60;          // 532 x ... -> adjust canvas
+const TOPBAR = 60;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const PLAYER = 1, AI = 2;
+
+let board, turn, busy, state = "menu", winLine, hoverCol = -1;
+
+let AC = null;
+function beep(f, d = 0.08, t = "square", v = 0.12) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+function reset() {
+    board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    turn = PLAYER; busy = false; winLine = null;
+}
+
+function dropRow(b, col) { for (let r = ROWS - 1; r >= 0; r--) if (!b[r][col]) return r; return -1; }
+
+function winningLine(b, p) {
+    const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (b[r][c] !== p) continue;
+        for (const [dr, dc] of dirs) {
+            const line = [[r, c]];
+            for (let k = 1; k < 4; k++) { const nr = r + dr * k, nc = c + dc * k; if (nr < 0 || nc < 0 || nr >= ROWS || nc >= COLS || b[nr][nc] !== p) break; line.push([nr, nc]); }
+            if (line.length === 4) return line;
+        }
+    }
+    return null;
+}
+
+function place(col, p) {
+    const r = dropRow(board, col);
+    if (r < 0) return false;
+    board[r][col] = p; beep(p === PLAYER ? 480 : 300, 0.07);
+    const wl = winningLine(board, p);
+    if (wl) { winLine = wl; endGame(p); return true; }
+    if (board[0].every(v => v)) { endGame(0); return true; }   // draw
+    turn = p === PLAYER ? AI : PLAYER;
+    return true;
+}
+
+// --- AI: win > block > heuristic score ---
+function chooseAI() {
+    const valid = [];
+    for (let c = 0; c < COLS; c++) if (dropRow(board, c) >= 0) valid.push(c);
+    // win now?
+    for (const c of valid) { const r = dropRow(board, c); board[r][c] = AI; const w = winningLine(board, AI); board[r][c] = 0; if (w) return c; }
+    // block player win?
+    for (const c of valid) { const r = dropRow(board, c); board[r][c] = PLAYER; const w = winningLine(board, PLAYER); board[r][c] = 0; if (w) return c; }
+    // avoid giving player a win on top; score by centrality + small lookahead
+    let bestC = valid[0], bestS = -1e9;
+    for (const c of valid) {
+        const r = dropRow(board, c);
+        board[r][c] = AI;
+        // does this hand player a winning reply directly above?
+        let penalty = 0;
+        const r2 = dropRow(board, c);
+        if (r2 >= 0) { board[r2][c] = PLAYER; if (winningLine(board, PLAYER)) penalty = 1000; board[r2][c] = 0; }
+        let s = scoreBoard(board, AI) - penalty + (3 - Math.abs(c - 3)) * 2;
+        board[r][c] = 0;
+        if (s > bestS) { bestS = s; bestC = c; }
+    }
+    return bestC;
+}
+function scoreBoard(b, p) {
+    let s = 0;
+    const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
+        for (const [dr, dc] of dirs) {
+            let me = 0, opp = 0, ok = true;
+            for (let k = 0; k < 4; k++) { const nr = r + dr * k, nc = c + dc * k; if (nr < 0 || nc < 0 || nr >= ROWS || nc >= COLS) { ok = false; break; } const v = b[nr][nc]; if (v === p) me++; else if (v) opp++; }
+            if (!ok || (me && opp)) continue;
+            if (me === 3) s += 50; else if (me === 2) s += 10; else if (me === 1) s += 1;
+            if (opp === 3) s -= 40; else if (opp === 2) s -= 8;
+        }
+    return s;
+}
+
+function endGame(winner) {
+    state = "over"; busy = true;
+    const t = document.getElementById("over-title");
+    if (winner === PLAYER) { t.textContent = "YOU WIN"; t.style.color = "#00ff88"; beep(660, 0.15); beep(990, 0.15); }
+    else if (winner === AI) { t.textContent = "CPU WINS"; t.style.color = "#ff3355"; beep(160, 0.4, "sawtooth", 0.2); }
+    else { t.textContent = "DRAW"; t.style.color = "#ffd700"; }
+    setTimeout(() => document.getElementById("over").classList.remove("hidden"), 900);
+}
+
+function playerMove(col) {
+    if (state !== "playing" || busy || turn !== PLAYER) return;
+    if (dropRow(board, col) < 0) return;
+    place(col, PLAYER);
+    if (state === "playing" && turn === AI) { busy = true; setTimeout(() => { place(chooseAI(), AI); busy = false; }, 420); }
+}
+
+function draw() {
+    ctx.fillStyle = "#05060f"; ctx.fillRect(0, 0, W, H);
+    // hover preview
+    if (state === "playing" && turn === PLAYER && hoverCol >= 0 && dropRow(board, hoverCol) >= 0) {
+        ctx.fillStyle = "rgba(255,51,85,0.5)";
+        ctx.beginPath(); ctx.arc(hoverCol * CELL + CELL / 2, TOPBAR / 2 + 4, CELL * 0.36, 0, Math.PI * 2); ctx.fill();
+    }
+    // board panel
+    ctx.fillStyle = "#0a1a4a";
+    ctx.beginPath(); ctx.roundRect(4, TOPBAR, W - 8, ROWS * CELL - 4, 14); ctx.fill();
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const x = c * CELL + CELL / 2, y = TOPBAR + r * CELL + CELL / 2;
+        const v = board[r][c];
+        if (v === 0) { ctx.fillStyle = "#04040c"; }
+        else if (v === PLAYER) { ctx.fillStyle = "#ff3355"; ctx.shadowBlur = 14; ctx.shadowColor = "#ff3355"; }
+        else { ctx.fillStyle = "#ffd700"; ctx.shadowBlur = 14; ctx.shadowColor = "#ffd700"; }
+        ctx.beginPath(); ctx.arc(x, y, CELL * 0.4, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+    }
+    // winning line highlight
+    if (winLine) {
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 6; ctx.shadowBlur = 16; ctx.shadowColor = "#fff";
+        const a = winLine[0], b = winLine[3];
+        ctx.beginPath();
+        ctx.moveTo(a[1] * CELL + CELL / 2, TOPBAR + a[0] * CELL + CELL / 2);
+        ctx.lineTo(b[1] * CELL + CELL / 2, TOPBAR + b[0] * CELL + CELL / 2);
+        ctx.stroke(); ctx.shadowBlur = 0;
+    }
+    // turn indicator
+    ctx.font = "bold 16px Orbitron"; ctx.textAlign = "center";
+    if (state === "playing") {
+        ctx.fillStyle = turn === PLAYER ? "#ff3355" : "#ffd700";
+        ctx.fillText(turn === PLAYER ? "YOUR TURN" : "CPU THINKING...", W / 2, 26);
+    }
+    ctx.textAlign = "left";
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+
+function start() {
+    if (!AC) beep(480);
+    reset(); state = "playing"; winLine = null;
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+}
+
+canvas.addEventListener("mousemove", e => {
+    const r = canvas.getBoundingClientRect();
+    hoverCol = Math.floor((e.clientX - r.left) * (W / r.width) / CELL);
+});
+canvas.addEventListener("click", e => {
+    const r = canvas.getBoundingClientRect();
+    playerMove(Math.floor((e.clientX - r.left) * (W / r.width) / CELL));
+});
+document.getElementById("start-btn").addEventListener("click", start);
+document.getElementById("retry-btn").addEventListener("click", start);
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

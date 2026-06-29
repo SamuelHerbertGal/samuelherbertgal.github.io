@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Whack-a-Mole</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; cursor: crosshair; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.9);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.hidden { display: none; }
+    h1 { font-size: 2.5rem; font-weight: 900; font-style: italic; color: #fff;
+        text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.9rem; opacity: 0.85; margin-bottom: 8px; letter-spacing: 1px; }
+    .keys { font-size: 0.72rem; opacity: 0.6; line-height: 1.9; margin-bottom: 22px; letter-spacing: 1px; }
+    .keys b { color: var(--neon-blue); opacity: 1; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue);
+        border-radius: 10px; padding: 13px 40px; font-family: 'Orbitron'; font-size: 1.1rem;
+        font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    .stat { color: #fff; font-size: 1.05rem; margin-bottom: 14px; letter-spacing: 1px; }
+    .stat span { color: var(--gold); text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="600" height="600"></canvas>
+    <div id="menu" class="panel">
+        <h1>WHACK-A-MOLE</h1>
+        <p class="sub">Bonk the moles. Dodge the bombs.</p>
+        <p class="keys"><b>CLICK</b> the green moles for points<br>avoid the red <b>bombs</b> &mdash; they cost you</p>
+        <button id="start-btn">START</button>
+    </div>
+    <div id="over" class="panel hidden">
+        <h1>TIME!</h1>
+        <p class="stat">SCORE <span id="final-score">0</span></p>
+        <p class="stat">BEST <span id="best-score">0</span></p>
+        <button id="retry-btn">PLAY AGAIN</button>
+    </div>
+</div>
+
+<script>
+const W = 600, H = 600, PI2 = Math.PI * 2, GRID = 3, GAME_TIME = 30;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const HI_KEY = "whackBest";
+
+let AC = null;
+function beep(f, d = 0.08, t = "square", v = 0.14) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+const holes = [];
+const margin = 90, gapX = (W - margin * 2) / (GRID - 1), gapY = (H - margin * 2 - 40) / (GRID - 1);
+for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++)
+    holes.push({ x: margin + c * gapX, y: margin + 40 + r * gapY, occ: null });
+
+let score, timeLeft, spawnT, spawnGap, parts, state = "menu";
+let best = parseInt(localStorage.getItem(HI_KEY) || "0", 10);
+
+function reset() {
+    score = 0; timeLeft = GAME_TIME; spawnT = 0.5; spawnGap = 0.9; parts = [];
+    holes.forEach(h => h.occ = null);
+}
+
+function spawn() {
+    const free = holes.filter(h => !h.occ);
+    if (!free.length) return;
+    const h = free[(Math.random() * free.length) | 0];
+    const bomb = Math.random() < 0.22;
+    h.occ = { bomb, t: 0, life: 0.7 + Math.random() * 0.6, rise: 0 };
+}
+
+function update(dt) {
+    timeLeft -= dt;
+    if (timeLeft <= 0) { timeLeft = 0; gameOver(); return; }
+    // difficulty ramps as time runs down
+    spawnGap = 0.5 + (timeLeft / GAME_TIME) * 0.5;
+    spawnT -= dt;
+    if (spawnT <= 0) { spawn(); spawnT = spawnGap * (0.6 + Math.random() * 0.6); }
+    for (const h of holes) {
+        if (!h.occ) continue;
+        const m = h.occ; m.t += dt;
+        m.rise = Math.min(1, m.rise + dt * 6);
+        if (m.t > m.life) { if (m.t > m.life + 0.2) h.occ = null; else m.rise = Math.max(0, m.rise - dt * 6); }
+    }
+    for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 400 * dt;
+        if (p.life <= 0) parts.splice(i, 1);
+    }
+}
+
+function burst(x, y, col) {
+    for (let i = 0; i < 12; i++) { const a = Math.random() * PI2, s = Math.random() * 200 + 40;
+        parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, life: 0.5, max: 0.5, col }); }
+}
+
+function hit(mx, my) {
+    if (state !== "playing") return;
+    for (const h of holes) {
+        if (h.occ && h.occ.rise > 0.4 && (mx - h.x) ** 2 + (my - (h.y - 18 * h.occ.rise)) ** 2 < 40 * 40) {
+            if (h.occ.bomb) { score = Math.max(0, score - 3); beep(120, 0.4, "sawtooth", 0.2); burst(h.x, h.y, "#ff3355"); }
+            else { score += 1; beep(700, 0.08); beep(900, 0.06); burst(h.x, h.y, "#00ff88"); }
+            h.occ = null;
+            return;
+        }
+    }
+}
+
+function gameOver() {
+    state = "over";
+    best = Math.max(best, score);
+    localStorage.setItem(HI_KEY, best);
+    document.getElementById("final-score").textContent = score;
+    document.getElementById("best-score").textContent = best;
+    document.getElementById("over").classList.remove("hidden");
+}
+
+function draw() {
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#1a2e12"); bg.addColorStop(1, "#0a1408");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    // holes + moles
+    for (const h of holes) {
+        ctx.fillStyle = "#0c1206"; ctx.beginPath(); ctx.ellipse(h.x, h.y, 44, 18, 0, 0, PI2); ctx.fill();
+        ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 4; ctx.stroke();
+        if (h.occ) {
+            const m = h.occ, off = 18 * m.rise, cy = h.y - off;
+            ctx.save();
+            ctx.beginPath(); ctx.ellipse(h.x, h.y, 44, 18, 0, 0, PI2); ctx.clip();   // clip so it rises out of hole
+            if (m.bomb) {
+                ctx.fillStyle = "#ff3355"; ctx.shadowBlur = 14; ctx.shadowColor = "#ff3355";
+                ctx.beginPath(); ctx.arc(h.x, cy, 30, 0, PI2); ctx.fill(); ctx.shadowBlur = 0;
+                ctx.fillStyle = "#220"; ctx.font = "bold 26px Orbitron"; ctx.textAlign = "center";
+                ctx.fillText("!", h.x, cy + 9);
+            } else {
+                ctx.fillStyle = "#5fbf3a"; ctx.shadowBlur = 12; ctx.shadowColor = "#00ff88";
+                ctx.beginPath(); ctx.arc(h.x, cy, 30, 0, PI2); ctx.fill(); ctx.shadowBlur = 0;
+                // face
+                ctx.fillStyle = "#fff"; ctx.beginPath();
+                ctx.arc(h.x - 10, cy - 6, 6, 0, PI2); ctx.arc(h.x + 10, cy - 6, 6, 0, PI2); ctx.fill();
+                ctx.fillStyle = "#000"; ctx.beginPath();
+                ctx.arc(h.x - 10, cy - 6, 3, 0, PI2); ctx.arc(h.x + 10, cy - 6, 3, 0, PI2); ctx.fill();
+                ctx.fillStyle = "#3a2a1a"; ctx.beginPath(); ctx.ellipse(h.x, cy + 8, 8, 5, 0, 0, PI2); ctx.fill();
+            }
+            ctx.restore();
+        }
+    }
+    // particles
+    for (const p of parts) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.col; ctx.fillRect(p.x - 3, p.y - 3, 6, 6); }
+    ctx.globalAlpha = 1;
+    // HUD
+    ctx.fillStyle = "#fff"; ctx.font = "bold 22px Orbitron"; ctx.textAlign = "left";
+    ctx.fillText("SCORE " + score, 18, 32);
+    ctx.textAlign = "right";
+    ctx.fillStyle = timeLeft < 6 ? "#ff3355" : "#ffd700";
+    ctx.fillText(Math.ceil(timeLeft) + "s", W - 18, 32);
+    ctx.textAlign = "left";
+    // time bar
+    ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.fillRect(18, 42, W - 36, 6);
+    ctx.fillStyle = timeLeft < 6 ? "#ff3355" : "#00f2ff"; ctx.fillRect(18, 42, (W - 36) * (timeLeft / GAME_TIME), 6);
+}
+
+let last = 0;
+function loop(ts) {
+    const dt = Math.min((ts - last) / 1000, 0.05); last = ts;
+    if (state === "playing") update(dt);
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function start() {
+    if (!AC) beep(700);
+    reset(); state = "playing";
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+}
+
+canvas.addEventListener("mousedown", e => {
+    const r = canvas.getBoundingClientRect();
+    hit((e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height));
+});
+document.getElementById("start-btn").addEventListener("click", start);
+document.getElementById("retry-btn").addEventListener("click", start);
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

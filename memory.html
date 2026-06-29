@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memory Match</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: radial-gradient(circle at 50% 20%, #14143a 0%, #05050f 70%);
+        color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    #app { width: 520px; max-width: 100%; }
+    .top { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 14px; }
+    h1 { font-size: 2.2rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 20px var(--neon-pink); }
+    .stats { display: flex; gap: 10px; }
+    .box { background: rgba(0,242,255,0.08); border: 1.5px solid rgba(0,242,255,0.4);
+        border-radius: 10px; padding: 7px 14px; text-align: center; min-width: 70px; }
+    .box .lbl { font-size: 0.58rem; letter-spacing: 2px; opacity: 0.7; }
+    .box .val { font-size: 1.2rem; font-weight: 700; color: #fff; }
+    #grid { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .card { aspect-ratio: 1; border-radius: 12px; cursor: pointer; position: relative;
+        transform-style: preserve-3d; transition: transform .35s; }
+    .card.flip, .card.matched { transform: rotateY(180deg); }
+    .face { position: absolute; inset: 0; border-radius: 12px; display: flex; align-items: center;
+        justify-content: center; backface-visibility: hidden; font-size: 2.4rem; }
+    .back { background: linear-gradient(135deg, #123, #0a1830); border: 2px solid rgba(0,242,255,0.5);
+        box-shadow: 0 0 14px rgba(0,242,255,0.25); color: rgba(0,242,255,0.5); font-size: 1.8rem; }
+    .front { background: rgba(255,255,255,0.06); border: 2px solid rgba(0,242,255,0.6); transform: rotateY(180deg); }
+    .card.matched .front { border-color: var(--green); box-shadow: 0 0 18px rgba(0,255,136,0.5); }
+    .hint { text-align: center; font-size: 0.72rem; opacity: 0.55; margin-top: 16px; letter-spacing: 1px; }
+    button { display: block; margin: 14px auto 0; background: transparent; color: var(--neon-blue);
+        border: 2px solid var(--neon-blue); border-radius: 10px; padding: 10px 30px; font-family: 'Orbitron';
+        font-size: 0.95rem; font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 24px var(--neon-blue); }
+    #win { position: absolute; inset: 0; background: rgba(5,5,20,0.92); border-radius: 12px;
+        display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 4; }
+    #win.show { display: flex; }
+    #win h2 { font-size: 2.2rem; color: #fff; text-shadow: 0 0 18px var(--gold); font-style: italic; margin-bottom: 8px; }
+    #win p { color: #fff; margin-bottom: 4px; }
+    #win span { color: var(--gold); }
+</style>
+</head>
+<body>
+<div id="app">
+    <div class="top">
+        <h1>MEMORY</h1>
+        <div class="stats">
+            <div class="box"><div class="lbl">MOVES</div><div class="val" id="moves">0</div></div>
+            <div class="box"><div class="lbl">TIME</div><div class="val" id="time">0s</div></div>
+            <div class="box"><div class="lbl">BEST</div><div class="val" id="best">—</div></div>
+        </div>
+    </div>
+    <div id="grid">
+        <div id="win"><h2>SOLVED!</h2><p>Moves <span id="win-moves">0</span> · Time <span id="win-time">0s</span></p><button id="win-btn">PLAY AGAIN</button></div>
+    </div>
+    <p class="hint">Flip two cards to find matching pairs &middot; clear the board in as few moves as you can</p>
+    <button id="new-btn">New Game</button>
+</div>
+
+<script>
+const SYMBOLS = ["🚀", "🌟", "🎮", "👾", "🔥", "⚡", "💎", "🎯"];
+const BEST_KEY = "memoryBest";
+const gridEl = document.getElementById("grid"), winEl = document.getElementById("win");
+
+let cards = [], first = null, lock = false, moves, matched, startTime, timerId, running = false;
+let best = JSON.parse(localStorage.getItem(BEST_KEY) || "null");
+
+let AC = null;
+function beep(f, d = 0.08, v = 0.12) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = "sine"; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function showBest() {
+    document.getElementById("best").textContent = best ? best.moves + " / " + best.time + "s" : "—";
+}
+
+function newGame() {
+    clearInterval(timerId); running = false;
+    moves = 0; matched = 0; first = null; lock = false;
+    document.getElementById("moves").textContent = "0";
+    document.getElementById("time").textContent = "0s";
+    winEl.classList.remove("show");
+    showBest();
+    // build deck
+    const deck = shuffle([...SYMBOLS, ...SYMBOLS]);
+    // clear old cards (keep #win element)
+    [...gridEl.querySelectorAll(".card")].forEach(c => c.remove());
+    cards = deck.map((sym, i) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `<div class="face back">?</div><div class="face front">${sym}</div>`;
+        card.dataset.sym = sym;
+        card.addEventListener("click", () => flip(card));
+        gridEl.appendChild(card);
+        return card;
+    });
+}
+
+function startTimer() {
+    running = true; startTime = Date.now();
+    timerId = setInterval(() => {
+        document.getElementById("time").textContent = Math.floor((Date.now() - startTime) / 1000) + "s";
+    }, 250);
+}
+
+function flip(card) {
+    if (lock || card === first || card.classList.contains("matched") || card.classList.contains("flip")) return;
+    if (!running) startTimer();
+    card.classList.add("flip"); beep(520);
+    if (!first) { first = card; return; }
+    // second card
+    moves++; document.getElementById("moves").textContent = moves;
+    if (first.dataset.sym === card.dataset.sym) {
+        first.classList.add("matched"); card.classList.add("matched");
+        first = null; matched++; beep(760); beep(960, 0.1);
+        if (matched === SYMBOLS.length) win();
+    } else {
+        lock = true; const a = first, b = card; first = null;
+        beep(180, 0.2);
+        setTimeout(() => { a.classList.remove("flip"); b.classList.remove("flip"); lock = false; }, 780);
+    }
+}
+
+function win() {
+    clearInterval(timerId); running = false;
+    const time = Math.floor((Date.now() - startTime) / 1000);
+    if (!best || moves < best.moves || (moves === best.moves && time < best.time)) {
+        best = { moves, time }; localStorage.setItem(BEST_KEY, JSON.stringify(best));
+    }
+    document.getElementById("win-moves").textContent = moves;
+    document.getElementById("win-time").textContent = time + "s";
+    winEl.classList.add("show");
+    showBest();
+}
+
+document.getElementById("new-btn").addEventListener("click", newGame);
+document.getElementById("win-btn").addEventListener("click", newGame);
+newGame();
+</script>
+</body>
+</html>

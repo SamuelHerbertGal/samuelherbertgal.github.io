@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Defense</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); background: #05060f; }
+    canvas { display: block; cursor: pointer; }
+    #controls { display: flex; gap: 8px; padding: 10px; align-items: center; justify-content: center; flex-wrap: wrap; border-top: 1px solid rgba(0,242,255,0.25); }
+    .tbtn { background: rgba(0,242,255,0.06); color: var(--neon-blue); border: 1.5px solid rgba(0,242,255,0.4);
+        border-radius: 9px; padding: 8px 12px; font-family: 'Orbitron'; font-size: 0.7rem; font-weight: 700; cursor: pointer;
+        text-transform: uppercase; letter-spacing: 1px; transition: 0.15s; }
+    .tbtn small { display: block; color: var(--gold); font-size: 0.65rem; margin-top: 2px; }
+    .tbtn:hover { background: rgba(0,242,255,0.16); }
+    .tbtn.sel { background: var(--neon-blue); color: #000; box-shadow: 0 0 18px var(--neon-blue); }
+    .tbtn.sel small { color: #003; }
+    #wave-btn { background: transparent; color: var(--green); border: 2px solid var(--green); border-radius: 9px;
+        padding: 9px 18px; font-family: 'Orbitron'; font-size: 0.78rem; font-weight: 700; cursor: pointer; letter-spacing: 1px; }
+    #wave-btn:hover { background: var(--green); color: #000; box-shadow: 0 0 18px var(--green); }
+    #wave-btn:disabled { opacity: 0.4; cursor: default; box-shadow: none; background: transparent; color: var(--green); }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.92);
+        display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.hidden { display: none; }
+    h1 { font-size: 2.4rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.85rem; opacity: 0.85; margin-bottom: 8px; letter-spacing: 1px; }
+    .keys { font-size: 0.7rem; opacity: 0.6; line-height: 1.9; margin-bottom: 20px; letter-spacing: 1px; max-width: 420px; }
+    .keys b { color: var(--neon-blue); opacity: 1; }
+    .panel button.big { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue); border-radius: 10px;
+        padding: 12px 38px; font-family: 'Orbitron'; font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    .panel button.big:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="640" height="440"></canvas>
+    <div id="controls">
+        <div class="tbtn" data-t="gun">Gun<small>$50</small></div>
+        <div class="tbtn" data-t="cannon">Cannon<small>$90</small></div>
+        <div class="tbtn" data-t="frost">Frost<small>$70</small></div>
+        <button id="wave-btn">▶ Start Wave</button>
+    </div>
+    <div id="menu" class="panel">
+        <h1>NEON DEFENSE</h1>
+        <p class="sub">Hold the line against 12 waves.</p>
+        <p class="keys">Pick a tower, then <b>click a tile</b> to build. Towers auto-fire at enemies in range. Click an existing tower to <b>upgrade</b> it. Survive all waves before they drain your cores.</p>
+        <button class="big" id="start-btn">DEFEND</button>
+    </div>
+    <div id="over" class="panel hidden">
+        <h1 id="over-title">VICTORY</h1>
+        <p class="sub" id="over-sub"></p>
+        <button class="big" id="retry-btn">PLAY AGAIN</button>
+    </div>
+</div>
+
+<script>
+const TILE = 40, COLS = 16, ROWS = 11, W = COLS * TILE, H = ROWS * TILE;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+
+let AC = null;
+function beep(f, d = 0.06, t = "square", v = 0.08) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+// path waypoints in tile coords
+const WP = [[-1, 1], [13, 1], [13, 4], [2, 4], [2, 8], [14, 8], [16, 8]];
+const pathPts = WP.map(([c, r]) => ({ x: c * TILE + TILE / 2, y: r * TILE + TILE / 2 }));
+const segLen = [];
+for (let i = 0; i < pathPts.length - 1; i++) segLen.push(Math.hypot(pathPts[i + 1].x - pathPts[i].x, pathPts[i + 1].y - pathPts[i].y));
+const pathSet = new Set();
+for (let i = 0; i < WP.length - 1; i++) {
+    let [c0, r0] = WP[i], [c1, r1] = WP[i + 1];
+    const dc = Math.sign(c1 - c0), dr = Math.sign(r1 - r0); let c = c0, r = r0;
+    while (c !== c1 || r !== r1) { pathSet.add(c + "," + r); c += dc; r += dr; }
+    pathSet.add(c1 + "," + r1);
+}
+
+const TOWERS = {
+    gun:    { cost: 50, range: 92, rate: 0.45, dmg: 7, col: "#00f2ff", proj: "#aef9ff", psp: 480 },
+    cannon: { cost: 90, range: 112, rate: 1.3, dmg: 24, col: "#ff8c00", proj: "#ffd28a", psp: 320, splash: 46 },
+    frost:  { cost: 70, range: 98, rate: 0.9, dmg: 4, col: "#7ad9ff", proj: "#dff5ff", psp: 420, slow: 0.45, slowT: 1.6 },
+};
+
+let gold, lives, wave, towers, enemies, projs, parts, spawnQ, spawnT, waveActive, selType, hoverC, hoverR, state = "menu";
+const MAXWAVE = 12;
+
+function reset() {
+    gold = 150; lives = 20; wave = 0; towers = []; enemies = []; projs = []; parts = [];
+    spawnQ = []; spawnT = 0; waveActive = false; selType = null; hoverC = -1; hoverR = -1;
+    updateButtons();
+}
+
+function buildWave(n) {
+    const q = [];
+    const hp = 18 + n * 9, fastHp = 12 + n * 6, tankHp = 70 + n * 30;
+    const norm = 6 + n;
+    for (let i = 0; i < norm; i++) q.push({ type: "norm", hp, sp: 52, reward: 6, col: "#ff5577" });
+    if (n >= 2) for (let i = 0; i < 3 + n; i++) q.push({ type: "fast", hp: fastHp, sp: 92, reward: 5, col: "#ffd700" });
+    if (n >= 4 && n % 2 === 0) for (let i = 0; i < 1 + (n >> 2); i++) q.push({ type: "tank", hp: tankHp, sp: 34, reward: 18, col: "#b070ff" });
+    // shuffle a little
+    for (let i = q.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [q[i], q[j]] = [q[j], q[i]]; }
+    return q;
+}
+
+function startWave() {
+    if (waveActive || state !== "playing" || wave >= MAXWAVE) return;
+    wave++; spawnQ = buildWave(wave); spawnT = 0; waveActive = true;
+    updateButtons(); beep(300, 0.12);
+}
+
+function spawnEnemy(d) {
+    enemies.push({ seg: 0, t: 0, x: pathPts[0].x, y: pathPts[0].y, hp: d.hp, max: d.hp, sp: d.sp, reward: d.reward, col: d.col, slow: 0 });
+}
+
+function update(dt) {
+    // spawning
+    if (waveActive && spawnQ.length) {
+        spawnT -= dt;
+        if (spawnT <= 0) { spawnEnemy(spawnQ.shift()); spawnT = 0.7; }
+    }
+    // enemies move
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        const sp = e.sp * (e.slow > 0 ? 0.45 : 1);
+        if (e.slow > 0) e.slow -= dt;
+        e.t += sp * dt / segLen[e.seg];
+        while (e.t >= 1 && e.seg < pathPts.length - 2) { e.t -= 1; e.seg++; }
+        const a = pathPts[e.seg], b = pathPts[e.seg + 1];
+        e.x = a.x + (b.x - a.x) * e.t; e.y = a.y + (b.y - a.y) * e.t;
+        if (e.seg >= pathPts.length - 2 && e.t >= 1) { enemies.splice(i, 1); lives--; beep(140, 0.2, "sawtooth", 0.15); if (lives <= 0) gameOver(false); }
+    }
+    // towers fire
+    for (const t of towers) {
+        t.cd -= dt;
+        const spec = TOWERS[t.type];
+        if (t.cd <= 0) {
+            // target: furthest-along enemy in range
+            let best = null, bestProg = -1;
+            for (const e of enemies) {
+                const d = Math.hypot(e.x - t.x, e.y - t.y);
+                if (d <= t.range) { const prog = e.seg + e.t; if (prog > bestProg) { bestProg = prog; best = e; } }
+            }
+            if (best) {
+                projs.push({ x: t.x, y: t.y, target: best, sp: spec.psp, dmg: t.dmg, col: spec.proj, type: t.type, range: spec });
+                t.cd = t.rate; beep(t.type === "cannon" ? 220 : 600, 0.04);
+            }
+        }
+    }
+    // projectiles
+    for (let i = projs.length - 1; i >= 0; i--) {
+        const p = projs[i];
+        if (!p.target || p.target.hp <= 0 || !enemies.includes(p.target)) { projs.splice(i, 1); continue; }
+        const dx = p.target.x - p.x, dy = p.target.y - p.y, d = Math.hypot(dx, dy);
+        if (d < 8) {
+            hitEnemy(p.target, p.dmg);
+            if (p.range.splash) { for (const e of enemies) if (e !== p.target && Math.hypot(e.x - p.x, e.y - p.y) < p.range.splash) hitEnemy(e, p.dmg * 0.6); burst(p.x, p.y, "#ff8c00", 10); }
+            if (p.range.slow) p.target.slow = p.range.slowT;
+            projs.splice(i, 1); continue;
+        }
+        p.x += dx / d * p.sp * dt; p.y += dy / d * p.sp * dt;
+    }
+    for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; if (p.life <= 0) parts.splice(i, 1); }
+    // wave end
+    if (waveActive && spawnQ.length === 0 && enemies.length === 0) {
+        waveActive = false; gold += 40 + wave * 8; beep(660, 0.15); beep(880, 0.15);
+        if (wave >= MAXWAVE) gameOver(true);
+        updateButtons();
+    }
+}
+
+function hitEnemy(e, dmg) {
+    e.hp -= dmg;
+    if (e.hp <= 0) { const idx = enemies.indexOf(e); if (idx >= 0) { enemies.splice(idx, 1); gold += e.reward; burst(e.x, e.y, e.col, 12); updateButtons(); } }
+}
+function burst(x, y, col, n) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = Math.random() * 130 + 30; parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5, max: 0.5, col }); } }
+
+function gameOver(won) {
+    state = "over";
+    document.getElementById("over-title").textContent = won ? "VICTORY" : "CORES LOST";
+    document.getElementById("over-title").style.color = won ? "#00ff88" : "#ff3355";
+    document.getElementById("over-sub").textContent = won ? "All 12 waves repelled!" : "You reached wave " + wave;
+    document.getElementById("over").classList.remove("hidden");
+}
+
+function tileBuildable(c, r) {
+    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
+    if (pathSet.has(c + "," + r)) return false;
+    return !towers.some(t => t.c === c && t.r === r);
+}
+
+function clickAt(mx, my) {
+    if (state !== "playing") return;
+    const c = Math.floor(mx / TILE), r = Math.floor(my / TILE);
+    const existing = towers.find(t => t.c === c && t.r === r);
+    if (existing) { upgrade(existing); return; }
+    if (!selType || !tileBuildable(c, r)) return;
+    const spec = TOWERS[selType];
+    if (gold < spec.cost) { beep(150, 0.1); return; }
+    gold -= spec.cost;
+    towers.push({ c, r, x: c * TILE + TILE / 2, y: r * TILE + TILE / 2, type: selType, range: spec.range, rate: spec.rate, dmg: spec.dmg, cd: 0, lvl: 1 });
+    beep(520, 0.08); updateButtons();
+}
+function upgrade(t) {
+    const cost = Math.round((TOWERS[t.type].cost) * 0.8 * t.lvl);
+    if (gold < cost) { beep(150, 0.1); return; }
+    gold -= cost; t.lvl++; t.dmg = Math.round(t.dmg * 1.5); t.range += 10; t.rate *= 0.9;
+    beep(700, 0.1); burst(t.x, t.y, "#fff", 8); updateButtons();
+}
+
+function updateButtons() {
+    document.getElementById("wave-btn").disabled = waveActive;
+    document.getElementById("wave-btn").textContent = waveActive ? "Wave " + wave + " ..." : (wave >= MAXWAVE ? "—" : "▶ Wave " + (wave + 1));
+    document.querySelectorAll(".tbtn").forEach(b => {
+        const spec = TOWERS[b.dataset.t];
+        b.style.opacity = gold < spec.cost ? 0.5 : 1;
+        b.classList.toggle("sel", selType === b.dataset.t);
+    });
+}
+
+function draw() {
+    ctx.fillStyle = "#0a1208"; ctx.fillRect(0, 0, W, H);
+    // grass grid
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (!pathSet.has(c + "," + r)) { ctx.fillStyle = (c + r) % 2 ? "#13210f" : "#15240f"; ctx.fillRect(c * TILE, r * TILE, TILE, TILE); }
+    }
+    // path
+    ctx.strokeStyle = "#2a2418"; ctx.lineWidth = TILE - 6; ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(pathPts[0].x, pathPts[0].y); for (let i = 1; i < pathPts.length; i++) ctx.lineTo(pathPts[i].x, pathPts[i].y); ctx.stroke();
+    ctx.strokeStyle = "rgba(0,242,255,0.18)"; ctx.lineWidth = TILE - 14;
+    ctx.beginPath(); ctx.moveTo(pathPts[0].x, pathPts[0].y); for (let i = 1; i < pathPts.length; i++) ctx.lineTo(pathPts[i].x, pathPts[i].y); ctx.stroke();
+    // hover ghost
+    if (state === "playing" && selType && hoverC >= 0) {
+        const ok = tileBuildable(hoverC, hoverR);
+        ctx.fillStyle = ok ? "rgba(0,255,136,0.25)" : "rgba(255,51,85,0.25)";
+        ctx.fillRect(hoverC * TILE, hoverR * TILE, TILE, TILE);
+        if (ok) { ctx.strokeStyle = "rgba(255,255,255,0.3)"; ctx.beginPath(); ctx.arc(hoverC * TILE + TILE / 2, hoverR * TILE + TILE / 2, TOWERS[selType].range, 0, 6.28); ctx.stroke(); }
+    }
+    // towers
+    for (const t of towers) {
+        const spec = TOWERS[t.type];
+        ctx.fillStyle = "#222"; ctx.beginPath(); ctx.arc(t.x, t.y, 15, 0, 6.28); ctx.fill();
+        ctx.fillStyle = spec.col; ctx.shadowBlur = 8; ctx.shadowColor = spec.col;
+        ctx.beginPath(); ctx.arc(t.x, t.y, 11, 0, 6.28); ctx.fill(); ctx.shadowBlur = 0;
+        // barrel toward nearest enemy
+        let near = null, nd = 1e9; for (const e of enemies) { const d = Math.hypot(e.x - t.x, e.y - t.y); if (d < nd) { nd = d; near = e; } }
+        if (near) { const a = Math.atan2(near.y - t.y, near.x - t.x); ctx.strokeStyle = spec.col; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(t.x + Math.cos(a) * 16, t.y + Math.sin(a) * 16); ctx.stroke(); }
+        if (t.lvl > 1) { ctx.fillStyle = "#ffd700"; ctx.font = "9px Orbitron"; ctx.textAlign = "center"; ctx.fillText("L" + t.lvl, t.x, t.y - 16); ctx.textAlign = "left"; }
+    }
+    // enemies
+    for (const e of enemies) {
+        ctx.fillStyle = e.slow > 0 ? "#9fd8ff" : e.col; ctx.shadowBlur = 6; ctx.shadowColor = e.col;
+        ctx.beginPath(); ctx.arc(e.x, e.y, 11, 0, 6.28); ctx.fill(); ctx.shadowBlur = 0;
+        ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(e.x - 12, e.y - 18, 24, 4);
+        ctx.fillStyle = "#00ff88"; ctx.fillRect(e.x - 12, e.y - 18, 24 * (e.hp / e.max), 4);
+    }
+    // projectiles
+    for (const p of projs) { ctx.fillStyle = p.col; ctx.shadowBlur = 6; ctx.shadowColor = p.col; ctx.beginPath(); ctx.arc(p.x, p.y, p.type === "cannon" ? 5 : 3, 0, 6.28); ctx.fill(); }
+    ctx.shadowBlur = 0;
+    for (const p of parts) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.col; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); }
+    ctx.globalAlpha = 1;
+    // HUD
+    ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, W, 26);
+    ctx.fillStyle = "#ffd700"; ctx.font = "bold 15px Orbitron"; ctx.textAlign = "left";
+    ctx.fillText("◆ " + gold, 10, 19);
+    ctx.fillStyle = "#00ff88"; ctx.fillText("♥ " + lives, 130, 19);
+    ctx.fillStyle = "#fff"; ctx.textAlign = "right"; ctx.fillText("WAVE " + wave + " / " + MAXWAVE, W - 10, 19); ctx.textAlign = "left";
+}
+
+let last = 0;
+function loop(ts) {
+    const dt = Math.min((ts - last) / 1000, 0.05); last = ts;
+    if (state === "playing") update(dt);
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function start() {
+    if (!AC) beep(440);
+    reset(); state = "playing";
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+}
+
+canvas.addEventListener("mousemove", e => {
+    const r = canvas.getBoundingClientRect();
+    hoverC = Math.floor((e.clientX - r.left) * (W / r.width) / TILE);
+    hoverR = Math.floor((e.clientY - r.top) * (H / r.height) / TILE);
+});
+canvas.addEventListener("mouseleave", () => { hoverC = -1; });
+canvas.addEventListener("click", e => {
+    const r = canvas.getBoundingClientRect();
+    clickAt((e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height));
+});
+document.querySelectorAll(".tbtn").forEach(b => b.addEventListener("click", () => { selType = selType === b.dataset.t ? null : b.dataset.t; updateButtons(); }));
+document.getElementById("wave-btn").addEventListener("click", startWave);
+document.getElementById("start-btn").addEventListener("click", start);
+document.getElementById("retry-btn").addEventListener("click", start);
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon 2048</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: radial-gradient(circle at 50% 20%, #14143a 0%, #05050f 70%);
+        color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    #app { width: 460px; max-width: 100%; }
+    .top { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 14px; }
+    h1 { font-size: 2.4rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 20px var(--neon-pink); }
+    .scores { display: flex; gap: 10px; }
+    .score-box { background: rgba(0,242,255,0.08); border: 1.5px solid rgba(0,242,255,0.4);
+        border-radius: 10px; padding: 8px 16px; text-align: center; min-width: 84px; }
+    .score-box .lbl { font-size: 0.6rem; letter-spacing: 2px; opacity: 0.7; }
+    .score-box .val { font-size: 1.3rem; font-weight: 700; color: #fff; }
+    #board { position: relative; background: rgba(10,14,30,0.85); border: 2px solid rgba(0,242,255,0.35);
+        border-radius: 14px; padding: 12px; display: grid; grid-template-columns: repeat(4, 1fr);
+        gap: 12px; box-shadow: 0 0 30px rgba(0,242,255,0.25); }
+    .cell { aspect-ratio: 1; border-radius: 10px; background: rgba(255,255,255,0.04);
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 900; font-size: 1.9rem; color: #fff; transition: transform .08s; }
+    .cell.pop { animation: pop .15s ease; }
+    @keyframes pop { 0% { transform: scale(0.6); } 100% { transform: scale(1); } }
+    .hint { text-align: center; font-size: 0.72rem; opacity: 0.55; margin-top: 16px; letter-spacing: 1px; }
+    .hint b { color: var(--neon-blue); opacity: 1; }
+    button { display: block; margin: 14px auto 0; background: transparent; color: var(--neon-blue);
+        border: 2px solid var(--neon-blue); border-radius: 10px; padding: 10px 30px; font-family: 'Orbitron';
+        font-size: 0.95rem; font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 24px var(--neon-blue); }
+    #msg { position: absolute; inset: 0; background: rgba(5,5,20,0.9); border-radius: 14px;
+        display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 4; }
+    #msg.show { display: flex; }
+    #msg h2 { font-size: 2.2rem; color: #fff; text-shadow: 0 0 18px var(--gold); font-style: italic; }
+</style>
+</head>
+<body>
+<div id="app">
+    <div class="top">
+        <h1>2048</h1>
+        <div class="scores">
+            <div class="score-box"><div class="lbl">SCORE</div><div class="val" id="score">0</div></div>
+            <div class="score-box"><div class="lbl">BEST</div><div class="val" id="best">0</div></div>
+        </div>
+    </div>
+    <div id="board">
+        <div id="msg"><h2 id="msg-text">YOU WIN!</h2><button id="msg-btn">CONTINUE</button></div>
+    </div>
+    <p class="hint"><b>&larr; &uarr; &darr; &rarr;</b> / <b>WASD</b> to slide &middot; merge matching tiles to reach <b>2048</b></p>
+    <button id="new-btn">New Game</button>
+</div>
+
+<script>
+const N = 4, BEST_KEY = "neon2048Best";
+let board, score, best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10);
+let cells = [], won = false, dead = false;
+
+const boardEl = document.getElementById("board");
+const msgEl = document.getElementById("msg"), msgText = document.getElementById("msg-text");
+
+const COLORS = {
+    2: "#1f6f8b", 4: "#2389a8", 8: "#1f8a70", 16: "#3bb273", 32: "#b5a92b",
+    64: "#d98e04", 128: "#e07b39", 256: "#e0552b", 512: "#d6336c",
+    1024: "#b5179e", 2048: "#7209b7", 4096: "#3a0ca3",
+};
+
+function buildCells() {
+    cells = [];
+    for (let i = 0; i < N * N; i++) {
+        const d = document.createElement("div");
+        d.className = "cell";
+        boardEl.appendChild(d);
+        cells.push(d);
+    }
+}
+
+function newGame() {
+    board = Array.from({ length: N }, () => Array(N).fill(0));
+    score = 0; won = false; dead = false;
+    msgEl.classList.remove("show");
+    addTile(); addTile();
+    render();
+}
+
+function addTile() {
+    const empty = [];
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (!board[r][c]) empty.push([r, c]);
+    if (!empty.length) return;
+    const [r, c] = empty[(Math.random() * empty.length) | 0];
+    board[r][c] = Math.random() < 0.9 ? 2 : 4;
+    return [r, c];
+}
+
+function render(popCell) {
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+        const v = board[r][c], el = cells[r * N + c];
+        el.textContent = v || "";
+        el.style.background = v ? (COLORS[v] || "#3a0ca3") : "rgba(255,255,255,0.04)";
+        el.style.boxShadow = v ? "0 0 14px " + (COLORS[v] || "#3a0ca3") : "none";
+        el.style.fontSize = v >= 1024 ? "1.4rem" : v >= 128 ? "1.7rem" : "1.9rem";
+        el.classList.remove("pop");
+    }
+    if (popCell) cells[popCell[0] * N + popCell[1]].classList.add("pop");
+    document.getElementById("score").textContent = score;
+    best = Math.max(best, score);
+    localStorage.setItem(BEST_KEY, best);
+    document.getElementById("best").textContent = best;
+}
+
+// slide+merge a single row to the left; returns {row, moved}
+function slide(row) {
+    const original = row.slice();
+    let arr = row.filter(v => v);
+    for (let i = 0; i < arr.length - 1; i++) {
+        if (arr[i] === arr[i + 1]) {
+            arr[i] *= 2; score += arr[i];
+            if (arr[i] === 2048) won = true;
+            arr.splice(i + 1, 1);
+        }
+    }
+    while (arr.length < N) arr.push(0);
+    const moved = arr.some((v, i) => v !== original[i]);
+    return { row: arr, moved };
+}
+
+function rotateCW(b) {
+    const r = Array.from({ length: N }, () => Array(N).fill(0));
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) r[j][N - 1 - i] = b[i][j];
+    return r;
+}
+
+function move(dir) {
+    if (dead) return;
+    // rotate so the move becomes "left", process, rotate back
+    let rot = { left: 0, up: 3, right: 2, down: 1 }[dir];
+    let b = board;
+    for (let i = 0; i < rot; i++) b = rotateCW(b);
+    let moved = false;
+    b = b.map(row => { const s = slide(row); if (s.moved) moved = true; return s.row; });
+    for (let i = 0; i < (4 - rot) % 4; i++) b = rotateCW(b);
+    if (!moved) return;
+    board = b;
+    const np = addTile();
+    render(np);
+    if (won) showMsg("2048!", "CONTINUE");
+    else if (isDead()) { dead = true; showMsg("GAME OVER", "TRY AGAIN"); }
+}
+
+function isDead() {
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+        if (!board[r][c]) return false;
+        if (c < N - 1 && board[r][c] === board[r][c + 1]) return false;
+        if (r < N - 1 && board[r][c] === board[r + 1][c]) return false;
+    }
+    return true;
+}
+
+function showMsg(text, btn) {
+    msgText.textContent = text;
+    document.getElementById("msg-btn").textContent = btn;
+    msgEl.classList.add("show");
+}
+
+const KEYMAP = {
+    ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down",
+    a: "left", d: "right", w: "up", s: "down",
+};
+window.addEventListener("keydown", e => {
+    const dir = KEYMAP[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    move(dir);
+});
+
+document.getElementById("msg-btn").addEventListener("click", () => {
+    if (dead) newGame();
+    else { won = false; msgEl.classList.remove("show"); }   // continue after winning
+});
+document.getElementById("new-btn").addEventListener("click", newGame);
+
+buildCells();
+newGame();
+</script>
+</body>
+</html>

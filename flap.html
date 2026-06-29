@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Flap</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.88);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.hidden { display: none; }
+    h1 { font-size: 2.4rem; font-weight: 900; font-style: italic; color: #fff;
+        text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.85rem; opacity: 0.85; margin-bottom: 8px; letter-spacing: 1px; }
+    .keys { font-size: 0.7rem; opacity: 0.6; line-height: 1.9; margin-bottom: 20px; letter-spacing: 1px; }
+    .keys b { color: var(--neon-blue); opacity: 1; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue);
+        border-radius: 10px; padding: 12px 36px; font-family: 'Orbitron'; font-size: 1.05rem;
+        font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    .stat { color: #fff; font-size: 1rem; margin-bottom: 14px; letter-spacing: 1px; }
+    .stat span { color: var(--gold); text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="460" height="640"></canvas>
+    <div id="menu" class="panel">
+        <h1>NEON FLAP</h1>
+        <p class="sub">Thread the gates.</p>
+        <p class="keys"><b>CLICK</b> / <b>SPACE</b> to flap</p>
+        <button id="start-btn">FLAP</button>
+    </div>
+    <div id="over" class="panel hidden">
+        <h1>CRASHED</h1>
+        <p class="stat">SCORE <span id="final-score">0</span></p>
+        <p class="stat">BEST <span id="best-score">0</span></p>
+        <button id="retry-btn">RETRY</button>
+    </div>
+</div>
+
+<script>
+const W = 460, H = 640;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const HI_KEY = "neonFlapHi";
+
+const GRAV = 1500, FLAP = -430, GAP = 168, PIPE_W = 64, SPEED = 168, SPAWN = 1.5;
+let bird, pipes, score, spawnT, state = "menu", bgX = 0;
+let best = parseInt(localStorage.getItem(HI_KEY) || "0", 10);
+
+let AC = null;
+function beep(f, d, t = "square", v = 0.12) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try {
+        const o = AC.createOscillator(), g = AC.createGain();
+        o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d);
+    } catch (e) {}
+}
+
+function reset() {
+    bird = { x: 130, y: H / 2, vy: 0, rot: 0 };
+    pipes = []; score = 0; spawnT = 0;
+}
+function spawnPipe() {
+    const margin = 70;
+    const gapY = margin + Math.random() * (H - GAP - margin * 2);
+    pipes.push({ x: W + 20, gapY, passed: false });
+}
+function flap() {
+    if (state === "menu") return start();
+    if (state === "over") return;
+    bird.vy = FLAP; beep(660, 0.08);
+}
+
+function update(dt) {
+    bgX = (bgX - SPEED * 0.25 * dt) % 40;
+    bird.vy += GRAV * dt; bird.y += bird.vy * dt;
+    bird.rot = Math.max(-0.5, Math.min(1.2, bird.vy / 600));
+
+    spawnT += dt;
+    if (spawnT >= SPAWN) { spawnT = 0; spawnPipe(); }
+
+    for (let i = pipes.length - 1; i >= 0; i--) {
+        const p = pipes[i];
+        p.x -= SPEED * dt;
+        if (!p.passed && p.x + PIPE_W < bird.x) { p.passed = true; score++; beep(880, 0.08); }
+        if (p.x + PIPE_W < -20) pipes.splice(i, 1);
+        // collision
+        const br = 14;
+        if (bird.x + br > p.x && bird.x - br < p.x + PIPE_W &&
+            (bird.y - br < p.gapY || bird.y + br > p.gapY + GAP)) crash();
+    }
+    if (bird.y + 14 > H - 4 || bird.y - 14 < 0) crash();
+}
+
+function crash() {
+    if (state !== "playing") return;
+    state = "over"; beep(160, 0.4, "sawtooth", 0.2);
+    best = Math.max(best, score);
+    localStorage.setItem(HI_KEY, best);
+    document.getElementById("final-score").textContent = score;
+    document.getElementById("best-score").textContent = best;
+    document.getElementById("over").classList.remove("hidden");
+}
+
+function draw() {
+    // sky
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, "#0a0f24"); sky.addColorStop(0.6, "#1a1140"); sky.addColorStop(1, "#05050e");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+    // parallax dots
+    ctx.fillStyle = "rgba(120,140,220,0.25)";
+    for (let x = bgX; x < W; x += 40) for (let y = 40; y < H; y += 80) ctx.fillRect(x, y, 2, 2);
+    // pipes
+    for (const p of pipes) {
+        const grad = ctx.createLinearGradient(p.x, 0, p.x + PIPE_W, 0);
+        grad.addColorStop(0, "#00b894"); grad.addColorStop(0.5, "#00ff88"); grad.addColorStop(1, "#00b894");
+        ctx.fillStyle = grad; ctx.shadowBlur = 14; ctx.shadowColor = "#00ff88";
+        ctx.fillRect(p.x, 0, PIPE_W, p.gapY);
+        ctx.fillRect(p.x, p.gapY + GAP, PIPE_W, H - p.gapY - GAP);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#0a3"; ctx.fillRect(p.x - 4, p.gapY - 16, PIPE_W + 8, 16);
+        ctx.fillRect(p.x - 4, p.gapY + GAP, PIPE_W + 8, 16);
+    }
+    // bird
+    ctx.save();
+    ctx.translate(bird.x, bird.y); ctx.rotate(bird.rot);
+    ctx.fillStyle = "#ffd700"; ctx.shadowBlur = 16; ctx.shadowColor = "#ffae00";
+    ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(5, -4, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(6, -4, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#ff8c00"; ctx.beginPath();
+    ctx.moveTo(12, 2); ctx.lineTo(22, 5); ctx.lineTo(12, 8); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // score
+    ctx.fillStyle = "#fff"; ctx.font = "900 40px Orbitron"; ctx.textAlign = "center";
+    ctx.shadowBlur = 12; ctx.shadowColor = "#00f2ff";
+    if (state !== "menu") ctx.fillText(score, W / 2, 60);
+    ctx.shadowBlur = 0; ctx.textAlign = "left";
+}
+
+let last = 0;
+function loop(ts) {
+    const dt = Math.min((ts - last) / 1000, 0.05); last = ts;
+    if (state === "playing") update(dt);
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function start() {
+    reset(); state = "playing";
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+}
+
+canvas.addEventListener("mousedown", flap);
+window.addEventListener("keydown", e => {
+    if (e.key === " " || e.key === "ArrowUp") { e.preventDefault(); flap(); }
+});
+document.getElementById("start-btn").addEventListener("click", start);
+document.getElementById("retry-btn").addEventListener("click", start);
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

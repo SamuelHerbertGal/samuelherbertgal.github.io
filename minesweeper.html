@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Minesweeper</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: radial-gradient(circle at 50% 20%, #14143a 0%, #05050f 70%);
+        color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    #app { text-align: center; }
+    h1 { font-size: 2.2rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 20px var(--neon-pink); margin-bottom: 12px; }
+    .bar { display: flex; justify-content: space-between; align-items: center; max-width: 384px; margin: 0 auto 12px; }
+    .box { background: rgba(0,242,255,0.08); border: 1.5px solid rgba(0,242,255,0.4); border-radius: 10px;
+        padding: 6px 16px; min-width: 92px; }
+    .box .lbl { font-size: 0.55rem; letter-spacing: 2px; opacity: 0.7; }
+    .box .val { font-size: 1.25rem; font-weight: 700; color: #fff; }
+    #board { position: relative; display: grid; gap: 3px; margin: 0 auto; background: rgba(10,14,30,0.8);
+        padding: 8px; border-radius: 12px; border: 2px solid rgba(0,242,255,0.35); box-shadow: 0 0 28px rgba(0,242,255,0.22); }
+    .cell { width: 34px; height: 34px; border-radius: 6px; background: linear-gradient(145deg, #18324f, #0d1f38);
+        border: 1px solid rgba(0,242,255,0.3); cursor: pointer; font-family: 'Orbitron'; font-weight: 900;
+        font-size: 1.05rem; display: flex; align-items: center; justify-content: center; color: #fff; user-select: none; }
+    .cell:hover:not(.open) { background: linear-gradient(145deg, #1f4366, #122a48); }
+    .cell.open { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.08); cursor: default; }
+    .cell.mine { background: #ff3355; box-shadow: 0 0 16px #ff3355; }
+    .cell.flag { color: var(--gold); }
+    .hint { font-size: 0.7rem; opacity: 0.55; margin-top: 14px; letter-spacing: 1px; }
+    .hint b { color: var(--neon-blue); opacity: 1; }
+    button.btn { margin-top: 12px; background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue);
+        border-radius: 10px; padding: 10px 30px; font-family: 'Orbitron'; font-size: 0.95rem; font-weight: 700;
+        cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button.btn:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 24px var(--neon-blue); }
+    #msg { position: absolute; inset: 0; background: rgba(5,5,20,0.9); border-radius: 12px; display: none;
+        flex-direction: column; align-items: center; justify-content: center; z-index: 4; }
+    #msg.show { display: flex; }
+    #msg h2 { font-size: 2rem; color: #fff; font-style: italic; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div id="app">
+    <h1>MINESWEEPER</h1>
+    <div class="bar">
+        <div class="box"><div class="lbl">MINES</div><div class="val" id="mines">0</div></div>
+        <div class="box"><div class="lbl">TIME</div><div class="val" id="time">0</div></div>
+    </div>
+    <div id="board"><div id="msg"><h2 id="msg-text">CLEARED!</h2><button class="btn" id="msg-btn">PLAY AGAIN</button></div></div>
+    <p class="hint"><b>LEFT-CLICK</b> reveal &middot; <b>RIGHT-CLICK</b> flag</p>
+    <button class="btn" id="new-btn">New Game</button>
+</div>
+
+<script>
+const ROWS = 10, COLS = 10, MINES = 15;
+const COLORS = ["", "#00f2ff", "#00ff88", "#ffd700", "#ff8c00", "#ff3355", "#ff00ff", "#fff", "#aaa"];
+const boardEl = document.getElementById("board"), msgEl = document.getElementById("msg");
+let cells, started, dead, won, flags, timer = 0, timerId = null, opened;
+
+boardEl.style.gridTemplateColumns = `repeat(${COLS}, 34px)`;
+
+let AC = null;
+function beep(f, d = 0.07, t = "square", v = 0.12) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+function newGame() {
+    clearInterval(timerId); timerId = null; timer = 0; started = false; dead = false; won = false; flags = 0; opened = 0;
+    document.getElementById("time").textContent = "0";
+    document.getElementById("mines").textContent = MINES;
+    msgEl.classList.remove("show");
+    cells = [];
+    [...boardEl.querySelectorAll(".cell")].forEach(c => c.remove());
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const el = document.createElement("div");
+        el.className = "cell";
+        el.addEventListener("click", () => reveal(r, c));
+        el.addEventListener("contextmenu", e => { e.preventDefault(); flag(r, c); });
+        boardEl.appendChild(el);
+        cells.push({ r, c, el, mine: false, open: false, flagged: false, n: 0 });
+    }
+}
+const at = (r, c) => (r < 0 || c < 0 || r >= ROWS || c >= COLS) ? null : cells[r * COLS + c];
+
+function placeMines(sr, sc) {
+    let placed = 0;
+    while (placed < MINES) {
+        const r = (Math.random() * ROWS) | 0, c = (Math.random() * COLS) | 0, cell = at(r, c);
+        if (cell.mine || (Math.abs(r - sr) <= 1 && Math.abs(c - sc) <= 1)) continue;   // keep first click clear
+        cell.mine = true; placed++;
+    }
+    for (const cell of cells) {
+        let n = 0;
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { const nb = at(cell.r + dr, cell.c + dc); if (nb && nb.mine) n++; }
+        cell.n = n;
+    }
+    started = true;
+    timerId = setInterval(() => { timer++; document.getElementById("time").textContent = timer; }, 1000);
+}
+
+function reveal(r, c) {
+    if (dead || won) return;
+    const cell = at(r, c);
+    if (!cell || cell.open || cell.flagged) return;
+    if (!started) placeMines(r, c);
+    if (cell.mine) { loseGame(cell); return; }
+    flood(cell); beep(520, 0.04);
+    checkWin();
+}
+function flood(cell) {
+    if (cell.open || cell.flagged || cell.mine) return;
+    cell.open = true; opened++;
+    cell.el.classList.add("open");
+    if (cell.n > 0) { cell.el.textContent = cell.n; cell.el.style.color = COLORS[cell.n]; cell.el.style.textShadow = "0 0 8px " + COLORS[cell.n]; }
+    else for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { const nb = at(cell.r + dr, cell.c + dc); if (nb) flood(nb); }
+}
+function flag(r, c) {
+    if (dead || won || !started) { if (!started && !cells.some(x => x.open)) { /* allow flag pre-start */ } }
+    const cell = at(r, c);
+    if (!cell || cell.open) return;
+    cell.flagged = !cell.flagged;
+    cell.el.classList.toggle("flag", cell.flagged);
+    cell.el.textContent = cell.flagged ? "⚑" : "";
+    flags += cell.flagged ? 1 : -1;
+    document.getElementById("mines").textContent = MINES - flags;
+    beep(cell.flagged ? 700 : 300, 0.05);
+}
+function loseGame(hit) {
+    dead = true; clearInterval(timerId); beep(140, 0.4, "sawtooth", 0.2);
+    for (const cell of cells) if (cell.mine) { cell.el.classList.add("open", "mine"); cell.el.textContent = "✺"; }
+    hit.el.style.boxShadow = "0 0 22px #fff";
+    document.getElementById("msg-text").textContent = "BOOM!";
+    document.getElementById("msg-text").style.color = "#ff3355";
+    msgEl.classList.add("show");
+}
+function checkWin() {
+    if (opened === ROWS * COLS - MINES) {
+        won = true; clearInterval(timerId); beep(660, 0.15); beep(990, 0.15);
+        for (const cell of cells) if (cell.mine && !cell.flagged) { cell.el.classList.add("flag"); cell.el.textContent = "⚑"; }
+        document.getElementById("msg-text").textContent = "CLEARED!";
+        document.getElementById("msg-text").style.color = "#00ff88";
+        document.getElementById("mines").textContent = 0;
+        msgEl.classList.add("show");
+    }
+}
+
+boardEl.addEventListener("contextmenu", e => e.preventDefault());
+document.getElementById("new-btn").addEventListener("click", newGame);
+document.getElementById("msg-btn").addEventListener("click", newGame);
+newGame();
+</script>
+</body>
+</html>

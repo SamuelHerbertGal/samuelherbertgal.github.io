@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Pong</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; cursor: none; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.9);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.hidden { display: none; }
+    h1 { font-size: 2.6rem; font-weight: 900; font-style: italic; color: #fff;
+        text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.9rem; opacity: 0.85; margin-bottom: 8px; letter-spacing: 1px; }
+    .keys { font-size: 0.72rem; opacity: 0.6; line-height: 1.9; margin-bottom: 22px; letter-spacing: 1px; }
+    .keys b { color: var(--neon-blue); opacity: 1; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue);
+        border-radius: 10px; padding: 13px 40px; font-family: 'Orbitron'; font-size: 1.1rem;
+        font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    .stat { color: #fff; font-size: 1.1rem; margin-bottom: 16px; letter-spacing: 1px; }
+    .stat span { color: var(--gold); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="720" height="500"></canvas>
+    <div id="menu" class="panel">
+        <h1>NEON PONG</h1>
+        <p class="sub">First to 7 wins.</p>
+        <p class="keys"><b>MOUSE</b> or <b>&uarr; &darr;</b> / <b>W S</b> to move your paddle</p>
+        <button id="start-btn">PLAY</button>
+    </div>
+    <div id="over" class="panel hidden">
+        <h1 id="over-title">YOU WIN</h1>
+        <p class="stat" id="over-score">7 - 0</p>
+        <button id="retry-btn">REMATCH</button>
+    </div>
+</div>
+
+<script>
+const W = 720, H = 500, PW = 14, PH = 92, BALL = 9, WIN = 7;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+let AC = null;
+function beep(f, d = 0.06, v = 0.12) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = "square"; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+let player, ai, ball, pScore, aScore, state = "menu";
+const keys = {};
+let mouseY = H / 2, useMouse = false;
+
+function reset() {
+    player = { x: 24, y: H / 2 - PH / 2 };
+    ai = { x: W - 24 - PW, y: H / 2 - PH / 2, err: 0 };
+    pScore = 0; aScore = 0;
+    serve(Math.random() < 0.5 ? 1 : -1);
+}
+function serve(dir) {
+    ball = { x: W / 2, y: H / 2, vx: dir * 300, vy: (Math.random() * 2 - 1) * 180, sp: 300 };
+}
+
+function update(dt) {
+    // player control
+    if (useMouse) player.y = clamp(mouseY - PH / 2, 0, H - PH);
+    else {
+        const d = (keys.ArrowDown || keys.s ? 1 : 0) - (keys.ArrowUp || keys.w ? 1 : 0);
+        player.y = clamp(player.y + d * 480 * dt, 0, H - PH);
+    }
+    // ai control: slower than the ball, only reacts as it approaches, and misjudges a little
+    const aiSpeed = 280;
+    const aiTarget = ball.vx > 0 ? ball.y + ai.err : H / 2;   // chase incoming ball, else recenter
+    const center = ai.y + PH / 2, dz = 14;
+    if (center < aiTarget - dz) ai.y += aiSpeed * dt;
+    else if (center > aiTarget + dz) ai.y -= aiSpeed * dt;
+    ai.y = clamp(ai.y, 0, H - PH);
+
+    // ball
+    ball.x += ball.vx * dt; ball.y += ball.vy * dt;
+    if (ball.y < BALL) { ball.y = BALL; ball.vy *= -1; beep(300); }
+    if (ball.y > H - BALL) { ball.y = H - BALL; ball.vy *= -1; beep(300); }
+
+    // paddle collisions
+    if (ball.vx < 0 && ball.x - BALL < player.x + PW && ball.x > player.x &&
+        ball.y > player.y && ball.y < player.y + PH) bounce(player, 1);
+    if (ball.vx > 0 && ball.x + BALL > ai.x && ball.x < ai.x + PW &&
+        ball.y > ai.y && ball.y < ai.y + PH) bounce(ai, -1);
+
+    // scoring
+    if (ball.x < -20) { aScore++; beep(160, 0.3, 0.18); checkWin(-1); }
+    if (ball.x > W + 20) { pScore++; beep(660, 0.2, 0.15); checkWin(1); }
+}
+function bounce(p, dir) {
+    const rel = (ball.y - (p.y + PH / 2)) / (PH / 2);   // -1..1
+    if (dir > 0) ai.err = (Math.random() * 2 - 1) * 48;   // player hit -> AI misjudges this return
+    ball.sp = Math.min(ball.sp + 28, 720);
+    const ang = rel * 0.9;
+    ball.vx = dir * ball.sp * Math.cos(ang);
+    ball.vy = ball.sp * Math.sin(ang);
+    ball.x = dir > 0 ? p.x + PW + BALL : p.x - BALL;
+    beep(480);
+}
+function checkWin(scorer) {
+    if (pScore >= WIN || aScore >= WIN) { gameOver(); return; }
+    serve(scorer);   // serve toward the player who was scored on
+}
+
+function gameOver() {
+    state = "over";
+    const win = pScore >= WIN;
+    document.getElementById("over-title").textContent = win ? "YOU WIN" : "YOU LOSE";
+    document.getElementById("over-title").style.color = win ? "#00ff88" : "#ff3355";
+    document.getElementById("over-score").innerHTML = `<span>${pScore}</span> - <span>${aScore}</span>`;
+    document.getElementById("over").classList.remove("hidden");
+}
+
+function draw() {
+    ctx.fillStyle = "#05060f"; ctx.fillRect(0, 0, W, H);
+    // center net
+    ctx.strokeStyle = "rgba(0,242,255,0.25)"; ctx.lineWidth = 3; ctx.setLineDash([12, 16]);
+    ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke(); ctx.setLineDash([]);
+    // scores
+    ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.font = "900 56px Orbitron"; ctx.textAlign = "center";
+    ctx.fillText(pScore, W / 2 - 70, 70); ctx.fillText(aScore, W / 2 + 70, 70);
+    // paddles
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = "#00f2ff"; ctx.shadowColor = "#00f2ff"; ctx.fillRect(player.x, player.y, PW, PH);
+    ctx.fillStyle = "#ff3355"; ctx.shadowColor = "#ff3355"; ctx.fillRect(ai.x, ai.y, PW, PH);
+    // ball
+    ctx.fillStyle = "#fff"; ctx.shadowColor = "#fff";
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0; ctx.textAlign = "left";
+}
+
+let last = 0;
+function loop(ts) {
+    const dt = Math.min((ts - last) / 1000, 0.04); last = ts;
+    if (state === "playing") update(dt);
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function start() {
+    if (!AC) beep(480);
+    reset(); state = "playing";
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+}
+
+canvas.addEventListener("mousemove", e => {
+    const r = canvas.getBoundingClientRect();
+    mouseY = (e.clientY - r.top) * (H / r.height); useMouse = true;
+});
+window.addEventListener("keydown", e => {
+    keys[e.key] = true; useMouse = false;
+    if (["ArrowUp", "ArrowDown", " "].includes(e.key)) e.preventDefault();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+document.getElementById("start-btn").addEventListener("click", start);
+document.getElementById("retry-btn").addEventListener("click", start);
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Road Hopper</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.9);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.hidden { display: none; }
+    h1 { font-size: 2.6rem; font-weight: 900; font-style: italic; color: #fff;
+        text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.9rem; opacity: 0.85; margin-bottom: 8px; letter-spacing: 1px; }
+    .keys { font-size: 0.72rem; opacity: 0.6; line-height: 1.9; margin-bottom: 22px; letter-spacing: 1px; }
+    .keys b { color: var(--neon-blue); opacity: 1; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue);
+        border-radius: 10px; padding: 13px 40px; font-family: 'Orbitron'; font-size: 1.1rem;
+        font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    .stat { color: #fff; font-size: 1.05rem; margin-bottom: 14px; letter-spacing: 1px; }
+    .stat span { color: var(--gold); text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="600" height="600"></canvas>
+    <div id="menu" class="panel">
+        <h1>ROAD HOPPER</h1>
+        <p class="sub">Cross the traffic. Don't get flattened.</p>
+        <p class="keys"><b>&larr; &uarr; &darr; &rarr;</b> / <b>WASD</b> hop &nbsp;&middot;&nbsp; reach the top to score</p>
+        <button id="start-btn">HOP</button>
+    </div>
+    <div id="over" class="panel hidden">
+        <h1>SPLAT!</h1>
+        <p class="stat">SCORE <span id="final-score">0</span></p>
+        <p class="stat">BEST <span id="best-score">0</span></p>
+        <button id="retry-btn">RETRY</button>
+    </div>
+</div>
+
+<script>
+const COLS = 12, ROWS = 12, CELL = 50, W = COLS * CELL, H = ROWS * CELL;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const HI_KEY = "roadHopperBest";
+
+// row types: 0 = goal, 1..10 lanes, 11 = start grass
+// lanes alternate road / safe; each road lane gets cars
+let lanes, player, score, lives, state = "menu", level;
+let best = parseInt(localStorage.getItem(HI_KEY) || "0", 10);
+const CAR_COLS = ["#ff3355", "#ffd700", "#00ff88", "#ff8c00", "#00f2ff", "#ff00ff"];
+
+let AC = null;
+function beep(f, d, t = "square", v = 0.12) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+function buildLanes() {
+    lanes = [];
+    for (let r = 0; r < ROWS; r++) {
+        if (r === 0) { lanes.push({ type: "goal" }); continue; }
+        if (r === ROWS - 1 || r === 6) { lanes.push({ type: "safe" }); continue; }
+        const dir = r % 2 === 0 ? 1 : -1;
+        const speed = (70 + Math.random() * 60 + level * 14) * dir;
+        const gap = 170 + Math.random() * 120;
+        const cars = [];
+        const carW = 64 + Math.random() * 30;
+        for (let x = 0; x < W + gap; x += gap) cars.push({ x: x + Math.random() * 40, w: carW, col: CAR_COLS[(Math.random() * CAR_COLS.length) | 0] });
+        lanes.push({ type: "road", dir, speed, cars, carW });
+    }
+}
+
+function reset(full) {
+    if (full) { score = 0; lives = 3; level = 0; }
+    buildLanes();
+    player = { col: COLS >> 1, row: ROWS - 1, px: 0, py: 0, hopT: 0 };
+    syncPlayerPos();
+}
+function syncPlayerPos() {
+    player.tx = player.col * CELL + CELL / 2;
+    player.ty = player.row * CELL + CELL / 2;
+    if (player.px === 0 && player.py === 0) { player.px = player.tx; player.py = player.ty; }
+}
+
+function hop(dc, dr) {
+    if (state !== "playing") return;
+    const nc = player.col + dc, nr = player.row + dr;
+    if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) return;
+    player.col = nc; player.row = nr; player.hopT = 0.12;
+    syncPlayerPos(); beep(520, 0.06);
+    if (player.row === 0) reachGoal();
+}
+
+function reachGoal() {
+    score += 100 + level * 20; level++;
+    beep(880, 0.12); beep(1100, 0.12);
+    // reset to bottom, rebuild faster traffic
+    buildLanes();
+    player.col = COLS >> 1; player.row = ROWS - 1;
+    player.px = 0; player.py = 0; syncPlayerPos();
+}
+
+function loseLife() {
+    lives--; beep(140, 0.4, "sawtooth", 0.2);
+    if (lives <= 0) { gameOver(); return; }
+    player.col = COLS >> 1; player.row = ROWS - 1;
+    player.px = 0; player.py = 0; syncPlayerPos();
+}
+
+function gameOver() {
+    state = "over";
+    best = Math.max(best, score);
+    localStorage.setItem(HI_KEY, best);
+    document.getElementById("final-score").textContent = score;
+    document.getElementById("best-score").textContent = best;
+    document.getElementById("over").classList.remove("hidden");
+}
+
+function update(dt) {
+    if (player.hopT > 0) player.hopT -= dt;
+    // smooth glide toward target cell
+    player.px += (player.tx - player.px) * Math.min(1, dt * 18);
+    player.py += (player.ty - player.py) * Math.min(1, dt * 18);
+    // move cars
+    for (const lane of lanes) {
+        if (lane.type !== "road") continue;
+        for (const car of lane.cars) {
+            car.x += lane.speed * dt;
+            if (lane.speed > 0 && car.x > W + 20) car.x = -car.w - Math.random() * 80;
+            if (lane.speed < 0 && car.x + car.w < -20) car.x = W + Math.random() * 80;
+        }
+    }
+    // collision (use player's cell row, glide x)
+    const lane = lanes[player.row];
+    if (lane && lane.type === "road") {
+        const pr = 16, py = player.row * CELL + CELL / 2;
+        for (const car of lane.cars) {
+            if (player.px + pr > car.x && player.px - pr < car.x + car.w &&
+                Math.abs(player.py - py) < CELL / 2) { loseLife(); break; }
+        }
+    }
+}
+
+function draw() {
+    for (let r = 0; r < ROWS; r++) {
+        const lane = lanes[r], y = r * CELL;
+        if (lane.type === "goal") { ctx.fillStyle = "#13324f"; ctx.fillRect(0, y, W, CELL);
+            ctx.fillStyle = "#00ff88"; ctx.font = "bold 16px Orbitron"; ctx.textAlign = "center";
+            ctx.fillText("★ FINISH ★", W / 2, y + 32); ctx.textAlign = "left"; }
+        else if (lane.type === "safe") { ctx.fillStyle = "#214a23"; ctx.fillRect(0, y, W, CELL);
+            ctx.fillStyle = "rgba(0,0,0,0.12)"; for (let x = 6; x < W; x += 18) ctx.fillRect(x, y + 8, 3, CELL - 16); }
+        else {
+            ctx.fillStyle = "#23262e"; ctx.fillRect(0, y, W, CELL);
+            ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 2; ctx.setLineDash([18, 14]);
+            ctx.beginPath(); ctx.moveTo(0, y + CELL / 2); ctx.lineTo(W, y + CELL / 2); ctx.stroke(); ctx.setLineDash([]);
+            for (const car of lane.cars) drawCar(car, y);
+        }
+    }
+    // player frog
+    const px = player.px, py = player.py, sc = player.hopT > 0 ? 1.2 : 1;
+    ctx.fillStyle = "#00ff88"; ctx.shadowBlur = 12; ctx.shadowColor = "#00ff88";
+    ctx.beginPath(); ctx.arc(px, py, 16 * sc, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = "#063"; ctx.beginPath();
+    ctx.arc(px - 6, py - 6, 5, 0, Math.PI * 2); ctx.arc(px + 6, py - 6, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#000"; ctx.beginPath();
+    ctx.arc(px - 6, py - 6, 2, 0, Math.PI * 2); ctx.arc(px + 6, py - 6, 2, 0, Math.PI * 2); ctx.fill();
+    // HUD
+    ctx.fillStyle = "#fff"; ctx.font = "bold 18px Orbitron"; ctx.textAlign = "left";
+    ctx.fillText("SCORE " + score, 12, 24);
+    ctx.textAlign = "right";
+    for (let i = 0; i < lives; i++) { ctx.fillStyle = "#00ff88"; ctx.beginPath(); ctx.arc(W - 16 - i * 24, 18, 8, 0, Math.PI * 2); ctx.fill(); }
+    ctx.textAlign = "left";
+}
+
+function drawCar(car, y) {
+    ctx.fillStyle = car.col; ctx.shadowBlur = 8; ctx.shadowColor = car.col;
+    roundRect(car.x, y + 9, car.w, CELL - 18, 8); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    roundRect(car.x + car.w * 0.18, y + 15, car.w * 0.28, CELL - 30, 4); ctx.fill();
+}
+function roundRect(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+let last = 0;
+function loop(ts) {
+    const dt = Math.min((ts - last) / 1000, 0.05); last = ts;
+    if (state === "playing") update(dt);
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function start() {
+    reset(true); state = "playing";
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+}
+
+const MOVES = {
+    ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+    w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
+};
+window.addEventListener("keydown", e => {
+    const m = MOVES[e.key];
+    if (!m) return;
+    e.preventDefault(); hop(m[0], m[1]);
+});
+document.getElementById("start-btn").addEventListener("click", start);
+document.getElementById("retry-btn").addEventListener("click", start);
+
+level = 0;
+reset(true);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

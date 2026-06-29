@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gem Cascade</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; cursor: pointer; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.9);
+        display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.hidden { display: none; }
+    h1 { font-size: 2.4rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.85rem; opacity: 0.85; margin-bottom: 8px; letter-spacing: 1px; }
+    .stat { color: #fff; font-size: 1.05rem; margin: 6px 0 14px; letter-spacing: 1px; }
+    .stat span { color: var(--gold); text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue); border-radius: 10px;
+        padding: 12px 38px; font-family: 'Orbitron'; font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; margin-top: 8px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="448" height="508"></canvas>
+    <div id="menu" class="panel">
+        <h1>GEM CASCADE</h1>
+        <p class="sub">Swap to match 3+ &middot; chain cascades for combos</p>
+        <p class="sub" style="opacity:.6">60 seconds on the clock</p>
+        <button id="start-btn">PLAY</button>
+    </div>
+    <div id="over" class="panel hidden">
+        <h1>TIME!</h1>
+        <p class="stat">SCORE <span id="final-score">0</span></p>
+        <p class="stat">BEST <span id="best-score">0</span></p>
+        <button id="retry-btn">PLAY AGAIN</button>
+    </div>
+</div>
+
+<script>
+const COLS = 8, ROWS = 8, GEM = 56, TOP = 60, W = COLS * GEM, H = ROWS * GEM + TOP;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const COLORS = ["#ff3355", "#00f2ff", "#00ff88", "#ffd700", "#c850ff", "#ff8c00"];
+const HI_KEY = "gemCascadeHi";
+
+let AC = null;
+function beep(f, d = 0.06, t = "sine", v = 0.12) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+let grid, off, sel, score, combo, timeLeft, animating, state = "menu";
+let best = parseInt(localStorage.getItem(HI_KEY) || "0", 10);
+const randGem = () => (Math.random() * COLORS.length) | 0;
+
+function init() {
+    do {
+        grid = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, randGem));
+    } while (findMatches().any);
+    off = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    sel = null; score = 0; combo = 0; timeLeft = 60; animating = false;
+}
+
+function findMatches() {
+    const m = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+    let any = false;
+    for (let r = 0; r < ROWS; r++) { let run = 1; for (let c = 1; c <= COLS; c++) {
+        if (c < COLS && grid[r][c] >= 0 && grid[r][c] === grid[r][c - 1]) run++;
+        else { if (run >= 3) { for (let k = 1; k <= run; k++) { m[r][c - k] = true; any = true; } } run = 1; } } }
+    for (let c = 0; c < COLS; c++) { let run = 1; for (let r = 1; r <= ROWS; r++) {
+        if (r < ROWS && grid[r][c] >= 0 && grid[r][c] === grid[r - 1][c]) run++;
+        else { if (run >= 3) { for (let k = 1; k <= run; k++) { m[r - k][c] = true; any = true; } } run = 1; } } }
+    return { m, any };
+}
+
+function adjacent(a, b) { return Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1; }
+
+function trySwap(a, b) {
+    [grid[a.r][a.c], grid[b.r][b.c]] = [grid[b.r][b.c], grid[a.r][a.c]];
+    if (findMatches().any) { combo = 0; animating = true; beep(520, 0.06); setTimeout(resolveStep, 120); }
+    else { [grid[a.r][a.c], grid[b.r][b.c]] = [grid[b.r][b.c], grid[a.r][a.c]]; beep(160, 0.1); }   // revert
+}
+
+function resolveStep() {
+    const { m, any } = findMatches();
+    if (!any) { animating = false; combo = 0; return; }
+    let cleared = 0;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (m[r][c]) { grid[r][c] = -1; cleared++; }
+    combo++;
+    score += cleared * 10 * combo;
+    beep(440 + combo * 80, 0.08);
+    // gravity per column with fall offsets
+    for (let c = 0; c < COLS; c++) {
+        const existing = [];
+        for (let r = ROWS - 1; r >= 0; r--) if (grid[r][c] >= 0) existing.push({ v: grid[r][c], src: r });
+        const ng = Array(ROWS).fill(-1), no = Array(ROWS).fill(0);
+        let tr = ROWS - 1;
+        for (const g of existing) { ng[tr] = g.v; no[tr] = (g.src - tr) * GEM; tr--; }
+        for (let r = tr; r >= 0; r--) { ng[r] = randGem(); no[r] = -GEM * (tr - r + 1); }
+        for (let r = 0; r < ROWS; r++) { grid[r][c] = ng[r]; off[r][c] = no[r]; }
+    }
+    animating = true;   // animateDrops loop will call resolveStep again when settled
+}
+
+function update(dt) {
+    if (state !== "playing") return;
+    timeLeft -= dt;
+    if (timeLeft <= 0) { timeLeft = 0; gameOver(); return; }
+    // ease fall offsets
+    let moving = false;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (Math.abs(off[r][c]) > 0.5) { off[r][c] += (0 - off[r][c]) * Math.min(1, dt * 16); moving = true; }
+        else off[r][c] = 0;
+    }
+    if (animating && !moving) { animating = false; resolveStep(); }
+}
+
+function gameOver() {
+    state = "over";
+    best = Math.max(best, score); localStorage.setItem(HI_KEY, best);
+    document.getElementById("final-score").textContent = score;
+    document.getElementById("best-score").textContent = best;
+    document.getElementById("over").classList.remove("hidden");
+}
+
+function drawGem(x, y, col, sz) {
+    const g = ctx.createRadialGradient(x - sz * 0.2, y - sz * 0.2, sz * 0.1, x, y, sz);
+    g.addColorStop(0, "#fff"); g.addColorStop(0.25, col); g.addColorStop(1, "#000");
+    ctx.fillStyle = g; ctx.shadowBlur = 6; ctx.shadowColor = col;
+    ctx.beginPath(); ctx.roundRect(x - sz, y - sz, sz * 2, sz * 2, sz * 0.4); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.beginPath(); ctx.ellipse(x - sz * 0.3, y - sz * 0.4, sz * 0.3, sz * 0.18, -0.6, 0, 6.28); ctx.fill();
+}
+
+function draw() {
+    ctx.fillStyle = "#080614"; ctx.fillRect(0, 0, W, H);
+    // board bg
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        ctx.fillStyle = (r + c) % 2 ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.06)";
+        ctx.fillRect(c * GEM, TOP + r * GEM, GEM, GEM);
+    }
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (grid[r][c] < 0) continue;
+        const x = c * GEM + GEM / 2, y = TOP + r * GEM + GEM / 2 + off[r][c];
+        drawGem(x, y, COLORS[grid[r][c]], GEM * 0.38);
+    }
+    if (sel) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.shadowBlur = 12; ctx.shadowColor = "#fff";
+        ctx.strokeRect(sel.c * GEM + 3, TOP + sel.r * GEM + 3, GEM - 6, GEM - 6); ctx.shadowBlur = 0; }
+    // HUD
+    ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, W, TOP);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 22px Orbitron"; ctx.textAlign = "left";
+    ctx.fillText(score.toString(), 12, 28);
+    ctx.fillStyle = "#7a86a8"; ctx.font = "10px Orbitron"; ctx.fillText("SCORE", 12, 44);
+    if (combo > 1) { ctx.fillStyle = "#ffd700"; ctx.font = "bold 16px Orbitron"; ctx.textAlign = "center"; ctx.fillText("COMBO x" + combo, W / 2, 26); }
+    ctx.textAlign = "right"; ctx.fillStyle = timeLeft < 10 ? "#ff3355" : "#00f2ff"; ctx.font = "bold 22px Orbitron";
+    ctx.fillText(Math.ceil(timeLeft) + "", W - 12, 28);
+    ctx.fillStyle = "#7a86a8"; ctx.font = "10px Orbitron"; ctx.fillText("TIME", W - 12, 44);
+    ctx.textAlign = "left";
+}
+
+let last = 0;
+function loop(ts) { const dt = Math.min((ts - last) / 1000, 0.05); last = ts; update(dt); draw(); requestAnimationFrame(loop); }
+
+function start() {
+    if (!AC) beep(440);
+    init(); state = "playing";
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+}
+
+canvas.addEventListener("click", e => {
+    if (state !== "playing" || animating) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (W / rect.width), my = (e.clientY - rect.top) * (H / rect.height);
+    if (my < TOP) return;
+    const c = Math.floor(mx / GEM), r = Math.floor((my - TOP) / GEM);
+    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return;
+    const cell = { r, c };
+    if (!sel) { sel = cell; beep(660, 0.04); }
+    else if (sel.r === r && sel.c === c) { sel = null; }
+    else if (adjacent(sel, cell)) { const a = sel; sel = null; trySwap(a, cell); }
+    else { sel = cell; beep(660, 0.04); }
+});
+document.getElementById("start-btn").addEventListener("click", start);
+document.getElementById("retry-btn").addEventListener("click", start);
+
+init();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sky Climber</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.9);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.hidden { display: none; }
+    h1 { font-size: 2.4rem; font-weight: 900; font-style: italic; color: #fff;
+        text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.85rem; opacity: 0.85; margin-bottom: 8px; letter-spacing: 1px; }
+    .keys { font-size: 0.7rem; opacity: 0.6; line-height: 1.9; margin-bottom: 20px; letter-spacing: 1px; }
+    .keys b { color: var(--neon-blue); opacity: 1; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue);
+        border-radius: 10px; padding: 12px 38px; font-family: 'Orbitron'; font-size: 1.05rem;
+        font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    .stat { color: #fff; font-size: 1.05rem; margin-bottom: 14px; letter-spacing: 1px; }
+    .stat span { color: var(--gold); text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="420" height="620"></canvas>
+    <div id="menu" class="panel">
+        <h1>SKY CLIMBER</h1>
+        <p class="sub">Bounce ever higher. Never look down.</p>
+        <p class="keys"><b>&larr; &rarr;</b> / <b>A D</b> to steer &mdash; you bounce automatically</p>
+        <button id="start-btn">CLIMB</button>
+    </div>
+    <div id="over" class="panel hidden">
+        <h1>YOU FELL</h1>
+        <p class="stat">HEIGHT <span id="final-score">0</span></p>
+        <p class="stat">BEST <span id="best-score">0</span></p>
+        <button id="retry-btn">CLIMB AGAIN</button>
+    </div>
+</div>
+
+<script>
+const W = 420, H = 620, GRAV = 1500, JUMP = -700, PW = 40, PH = 40;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const HI_KEY = "skyClimberHi";
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+let AC = null;
+function beep(f, d = 0.07, t = "square", v = 0.1) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+let player, plats, score, state = "menu";
+let best = parseInt(localStorage.getItem(HI_KEY) || "0", 10);
+const keys = {};
+
+function makePlat(y) {
+    let type = "norm";
+    const r = Math.random();
+    if (score > 1200 && r < 0.14) type = "break";
+    else if (score > 500 && r < 0.30) type = "move";
+    return { x: rnd(0, W - 64), y, w: 64, h: 14, type, dir: Math.random() < 0.5 ? 1 : -1, broken: false };
+}
+
+function reset() {
+    player = { x: W / 2, y: H - 90, vx: 0, vy: JUMP, r: 20 };
+    plats = [{ x: W / 2 - 32, y: H - 50, w: 64, h: 14, type: "norm", dir: 1, broken: false }];
+    let y = H - 120;
+    while (y > -20) { plats.push(makePlat(y)); y -= rnd(72, 104); }
+    score = 0;
+}
+
+function update(dt) {
+    const mv = (keys.ArrowRight || keys.d ? 1 : 0) - (keys.ArrowLeft || keys.a ? 1 : 0);
+    player.vx = mv * 320;
+    player.vy += GRAV * dt;
+    player.x += player.vx * dt;
+    player.y += player.vy * dt;
+    // wrap horizontally
+    if (player.x < -player.r) player.x = W + player.r;
+    if (player.x > W + player.r) player.x = -player.r;
+
+    // platform landing (only while falling)
+    if (player.vy > 0) {
+        for (const p of plats) {
+            if (p.broken) continue;
+            if (player.x + player.r * 0.6 > p.x && player.x - player.r * 0.6 < p.x + p.w &&
+                player.y + player.r > p.y && player.y + player.r < p.y + p.h + player.vy * dt + 4) {
+                player.vy = JUMP; beep(520, 0.06);
+                if (p.type === "break") { p.broken = true; beep(200, 0.1); }
+                break;
+            }
+        }
+    }
+    // moving platforms
+    for (const p of plats) {
+        if (p.type === "move" && !p.broken) { p.x += p.dir * 90 * dt; if (p.x < 0 || p.x + p.w > W) p.dir *= -1; }
+        if (p.broken) p.y += 320 * dt;
+    }
+    // camera scroll
+    if (player.y < H * 0.42) {
+        const d = H * 0.42 - player.y;
+        player.y = H * 0.42; score += d;
+        for (const p of plats) p.y += d;
+    }
+    // cull + replenish
+    for (let i = plats.length - 1; i >= 0; i--) if (plats[i].y > H + 20) plats.splice(i, 1);
+    let minY = Math.min(...plats.map(p => p.y));
+    while (minY > -10) { minY -= rnd(72, 104); plats.push(makePlat(minY)); }
+
+    if (player.y > H + 30) gameOver();
+}
+
+function gameOver() {
+    state = "over";
+    const s = Math.floor(score);
+    best = Math.max(best, s); localStorage.setItem(HI_KEY, best);
+    document.getElementById("final-score").textContent = s;
+    document.getElementById("best-score").textContent = best;
+    document.getElementById("over").classList.remove("hidden");
+}
+
+function draw() {
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#0a0f2e"); bg.addColorStop(1, "#06040f");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 30; i++) { const sx = (i * 137) % W, sy = (i * 251) % H; ctx.fillStyle = "rgba(180,200,255,0.2)"; ctx.fillRect(sx, sy, 1.5, 1.5); }
+    // platforms
+    for (const p of plats) {
+        let col = p.type === "move" ? "#00f2ff" : p.type === "break" ? "#c87a3a" : "#00ff88";
+        if (p.broken) col = "#7a4a22";
+        ctx.fillStyle = col; ctx.shadowBlur = 8; ctx.shadowColor = col;
+        ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 6); ctx.fill(); ctx.shadowBlur = 0;
+        if (p.type === "break" && !p.broken) { ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x + p.w / 2, p.y); ctx.lineTo(p.x + p.w / 2, p.y + p.h); ctx.stroke(); }
+    }
+    // player (springy creature)
+    const x = player.x, y = player.y, r = player.r;
+    ctx.fillStyle = "#ffd700"; ctx.shadowBlur = 14; ctx.shadowColor = "#ffae00";
+    ctx.beginPath(); ctx.ellipse(x, y, r, r * (player.vy < 0 ? 1.05 : 0.95), 0, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x - 7, y - 5, 6, 0, Math.PI * 2); ctx.arc(x + 7, y - 5, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#000"; const lookx = player.vx > 0 ? 2 : player.vx < 0 ? -2 : 0;
+    ctx.beginPath(); ctx.arc(x - 7 + lookx, y - 5, 3, 0, Math.PI * 2); ctx.arc(x + 7 + lookx, y - 5, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y + 5, 5, 0.1 * Math.PI, 0.9 * Math.PI); ctx.stroke();
+    // HUD
+    ctx.fillStyle = "#fff"; ctx.font = "bold 20px Orbitron"; ctx.textAlign = "left";
+    ctx.shadowBlur = 8; ctx.shadowColor = "#00f2ff"; ctx.fillText(Math.floor(score).toString(), 14, 30); ctx.shadowBlur = 0;
+    ctx.fillStyle = "#7a86a8"; ctx.font = "10px Orbitron"; ctx.fillText("HEIGHT", 14, 44);
+}
+
+let last = 0;
+function loop(ts) {
+    const dt = Math.min((ts - last) / 1000, 0.04); last = ts;
+    if (state === "playing") update(dt);
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function start() {
+    if (!AC) beep(520);
+    reset(); state = "playing";
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+}
+
+window.addEventListener("keydown", e => {
+    keys[e.key] = true;
+    if (["ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+document.getElementById("start-btn").addEventListener("click", start);
+document.getElementById("retry-btn").addEventListener("click", start);
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

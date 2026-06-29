@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Invaders</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.9);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.hidden { display: none; }
+    h1 { font-size: 2.4rem; font-weight: 900; font-style: italic; color: #fff;
+        text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.85rem; opacity: 0.85; margin-bottom: 8px; letter-spacing: 1px; }
+    .keys { font-size: 0.7rem; opacity: 0.6; line-height: 1.9; margin-bottom: 20px; letter-spacing: 1px; }
+    .keys b { color: var(--neon-blue); opacity: 1; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue);
+        border-radius: 10px; padding: 12px 38px; font-family: 'Orbitron'; font-size: 1.05rem;
+        font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    .stat { color: #fff; font-size: 1.05rem; margin-bottom: 14px; letter-spacing: 1px; }
+    .stat span { color: var(--gold); text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="560" height="600"></canvas>
+    <div id="menu" class="panel">
+        <h1>NEON INVADERS</h1>
+        <p class="sub">Defend Earth. One ship. Endless swarm.</p>
+        <p class="keys"><b>&larr; &rarr;</b> / <b>A D</b> move &nbsp;&middot;&nbsp; <b>SPACE</b> fire</p>
+        <button id="start-btn">DEFEND</button>
+    </div>
+    <div id="over" class="panel hidden">
+        <h1 id="over-title">GAME OVER</h1>
+        <p class="stat">SCORE <span id="final-score">0</span></p>
+        <p class="stat">BEST <span id="best-score">0</span></p>
+        <button id="retry-btn">RETRY</button>
+    </div>
+</div>
+
+<script>
+const W = 560, H = 600;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const HI_KEY = "neonInvadersHi";
+const COLS = 9, ROWS = 4;
+
+let AC = null;
+function beep(f, d = 0.06, t = "square", v = 0.1) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+let ship, invaders, pBullets, eBullets, parts, score, lives, wave, dir, vstep, fireT, state = "menu";
+let best = parseInt(localStorage.getItem(HI_KEY) || "0", 10);
+const keys = {};
+
+function reset(full) {
+    if (full) { score = 0; lives = 3; wave = 1; }
+    ship = { x: W / 2, y: H - 40, w: 38, h: 16, cd: 0 };
+    pBullets = []; eBullets = []; parts = [];
+    buildWave();
+}
+function buildWave() {
+    invaders = [];
+    const startX = 70, gapX = 52, startY = 70, gapY = 44;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
+        invaders.push({ x: startX + c * gapX, y: startY + r * gapY, w: 30, h: 20, row: r, alive: true });
+    dir = 1; vstep = 16 + wave * 3; fireT = 1.2;
+}
+
+function update(dt) {
+    // ship
+    const mv = (keys.ArrowRight || keys.d ? 1 : 0) - (keys.ArrowLeft || keys.a ? 1 : 0);
+    ship.x = Math.max(ship.w / 2, Math.min(W - ship.w / 2, ship.x + mv * 300 * dt));
+    ship.cd -= dt;
+    if (keys[" "] && ship.cd <= 0) { pBullets.push({ x: ship.x, y: ship.y - 12, vy: -560 }); ship.cd = 0.4; beep(720, 0.06); }
+
+    // invader fleet movement (steps, speed scales with how few remain)
+    const alive = invaders.filter(i => i.alive);
+    const rate = 0.55 - Math.min(0.45, (1 - alive.length / (COLS * ROWS)) * 0.45) - wave * 0.02;
+    fleetT -= dt;
+    if (fleetT <= 0) {
+        fleetT = Math.max(0.08, rate);
+        let hitEdge = false;
+        for (const i of alive) { if ((dir > 0 && i.x + i.w / 2 + vstep > W - 8) || (dir < 0 && i.x - i.w / 2 - vstep < 8)) hitEdge = true; }
+        if (hitEdge) { dir *= -1; for (const i of alive) { i.y += 24; if (i.y + i.h > ship.y - 6) gameOver(); } beep(140, 0.05); }
+        else for (const i of alive) i.x += dir * vstep;
+    }
+
+    // invaders fire
+    fireT -= dt;
+    if (fireT <= 0 && alive.length) {
+        fireT = Math.max(0.35, 1.4 - wave * 0.12) * (0.6 + Math.random());
+        // pick a random column's lowest invader
+        const shooter = alive[(Math.random() * alive.length) | 0];
+        eBullets.push({ x: shooter.x, y: shooter.y + shooter.h, vy: 230 + wave * 14 });
+    }
+
+    // player bullets
+    for (let i = pBullets.length - 1; i >= 0; i--) {
+        const b = pBullets[i]; b.y += b.vy * dt;
+        if (b.y < -10) { pBullets.splice(i, 1); continue; }
+        for (const inv of alive) {
+            if (Math.abs(b.x - inv.x) < inv.w / 2 && Math.abs(b.y - inv.y) < inv.h / 2) {
+                inv.alive = false; pBullets.splice(i, 1);
+                score += (ROWS - inv.row) * 10; burst(inv.x, inv.y, "#00ff88"); beep(300, 0.08);
+                break;
+            }
+        }
+    }
+    // enemy bullets
+    for (let i = eBullets.length - 1; i >= 0; i--) {
+        const b = eBullets[i]; b.y += b.vy * dt;
+        if (b.y > H + 10) { eBullets.splice(i, 1); continue; }
+        if (Math.abs(b.x - ship.x) < ship.w / 2 && Math.abs(b.y - ship.y) < ship.h) {
+            eBullets.splice(i, 1); burst(ship.x, ship.y, "#ff3355"); beep(150, 0.3, "sawtooth", 0.2);
+            lives--; if (lives <= 0) { gameOver(); return; }
+        }
+    }
+    // particles
+    for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; if (p.life <= 0) parts.splice(i, 1); }
+
+    if (alive.length === 0) { wave++; beep(660, 0.15); beep(990, 0.15); buildWave(); }
+}
+let fleetT = 0;
+function burst(x, y, col) { for (let i = 0; i < 12; i++) { const a = Math.random() * 6.28, s = Math.random() * 160 + 30; parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5, max: 0.5, col }); } }
+
+function gameOver() {
+    state = "over";
+    best = Math.max(best, score); localStorage.setItem(HI_KEY, best);
+    document.getElementById("final-score").textContent = score;
+    document.getElementById("best-score").textContent = best;
+    document.getElementById("over").classList.remove("hidden");
+}
+
+function drawInvader(inv) {
+    const colByRow = ["#ff3355", "#ff8c00", "#ffd700", "#00ff88"];
+    const col = colByRow[inv.row % 4];
+    const x = inv.x, y = inv.y, w = inv.w, h = inv.h;
+    ctx.fillStyle = col; ctx.shadowBlur = 8; ctx.shadowColor = col;
+    // body
+    ctx.fillRect(x - w / 2, y - h / 2 + 4, w, h - 8);
+    ctx.fillRect(x - w / 2 + 4, y - h / 2, w - 8, 5);
+    // legs
+    const wig = Math.floor(Date.now() / 250) % 2 ? 3 : -3;
+    ctx.fillRect(x - w / 2, y + h / 2 - 5, 5, 5);
+    ctx.fillRect(x + w / 2 - 5, y + h / 2 - 5, 5, 5);
+    ctx.fillRect(x - 4 + wig, y + h / 2 - 4, 8, 4);
+    ctx.shadowBlur = 0;
+    // eyes
+    ctx.fillStyle = "#001"; ctx.fillRect(x - 7, y - 2, 4, 4); ctx.fillRect(x + 3, y - 2, 4, 4);
+}
+
+function draw() {
+    ctx.fillStyle = "#04040c"; ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 40; i++) { const sx = (i * 197) % W, sy = (i * 313 + (Date.now() / 40)) % H; ctx.fillStyle = "rgba(180,200,255,0.25)"; ctx.fillRect(sx, sy, 1.5, 1.5); }
+    invaders.forEach(i => { if (i.alive) drawInvader(i); });
+    // ship
+    ctx.fillStyle = "#00f2ff"; ctx.shadowBlur = 12; ctx.shadowColor = "#00f2ff";
+    ctx.beginPath(); ctx.moveTo(ship.x, ship.y - ship.h); ctx.lineTo(ship.x - ship.w / 2, ship.y + ship.h / 2);
+    ctx.lineTo(ship.x + ship.w / 2, ship.y + ship.h / 2); ctx.closePath(); ctx.fill();
+    ctx.fillRect(ship.x - 3, ship.y - ship.h - 6, 6, 8); ctx.shadowBlur = 0;
+    // bullets
+    ctx.fillStyle = "#fff"; for (const b of pBullets) ctx.fillRect(b.x - 2, b.y - 8, 4, 12);
+    ctx.fillStyle = "#ff8cc8"; for (const b of eBullets) ctx.fillRect(b.x - 2, b.y, 4, 10);
+    // particles
+    for (const p of parts) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.col; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); }
+    ctx.globalAlpha = 1;
+    // HUD
+    ctx.fillStyle = "#fff"; ctx.font = "bold 16px Orbitron"; ctx.textAlign = "left";
+    ctx.fillText("SCORE " + score, 10, 24);
+    ctx.textAlign = "center"; ctx.fillStyle = "#ffd700"; ctx.fillText("WAVE " + wave, W / 2, 24);
+    ctx.textAlign = "right";
+    for (let i = 0; i < lives; i++) { ctx.fillStyle = "#00f2ff"; ctx.beginPath(); ctx.moveTo(W - 12 - i * 24, 14); ctx.lineTo(W - 24 - i * 24, 26); ctx.lineTo(W - 12 - i * 24 + 0, 26); ctx.closePath(); ctx.fill(); }
+    ctx.textAlign = "left";
+}
+
+let last = 0;
+function loop(ts) {
+    const dt = Math.min((ts - last) / 1000, 0.05); last = ts;
+    if (state === "playing") update(dt);
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function start() {
+    if (!AC) beep(720);
+    reset(true); state = "playing";
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+}
+
+window.addEventListener("keydown", e => {
+    keys[e.key] = true;
+    if (["ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+document.getElementById("start-btn").addEventListener("click", start);
+document.getElementById("retry-btn").addEventListener("click", start);
+
+reset(true);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

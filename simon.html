@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Simon</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: radial-gradient(circle at 50% 20%, #14143a 0%, #05050f 70%);
+        color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; }
+    h1 { font-size: 2.2rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 20px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.8rem; opacity: 0.7; letter-spacing: 2px; margin-bottom: 18px; text-transform: uppercase; }
+    #pad { position: relative; width: 340px; height: 340px; border-radius: 50%;
+        display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px;
+        background: #0a0e1e; box-shadow: 0 0 30px rgba(0,242,255,0.25); }
+    .seg { cursor: pointer; opacity: 0.45; transition: opacity .12s, box-shadow .12s; }
+    .seg.lit { opacity: 1; }
+    .seg.green { background: #00b050; border-radius: 100% 0 0 0; }
+    .seg.red { background: #d62b3a; border-radius: 0 100% 0 0; }
+    .seg.yellow { background: #e0b400; border-radius: 0 0 0 100%; }
+    .seg.blue { background: #1f7fd6; border-radius: 0 0 100% 0; }
+    .seg.green.lit { box-shadow: 0 0 40px #00ff88; }
+    .seg.red.lit { box-shadow: 0 0 40px #ff4455; }
+    .seg.yellow.lit { box-shadow: 0 0 40px #ffe600; }
+    .seg.blue.lit { box-shadow: 0 0 40px #3fa9ff; }
+    #core { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        width: 120px; height: 120px; border-radius: 50%; background: #05060f; border: 3px solid rgba(0,242,255,0.4);
+        display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2; }
+    #level { font-size: 2.2rem; font-weight: 900; color: #fff; }
+    #core .l { font-size: 0.55rem; opacity: 0.6; letter-spacing: 2px; }
+    .info { margin-top: 18px; font-size: 0.95rem; letter-spacing: 1px; color: #fff; }
+    .info span { color: var(--gold); }
+    button { margin-top: 16px; background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue);
+        border-radius: 10px; padding: 12px 38px; font-family: 'Orbitron'; font-size: 1.05rem; font-weight: 700;
+        cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    #status { margin-top: 12px; font-size: 0.8rem; letter-spacing: 2px; opacity: 0.85; min-height: 18px; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<h1>NEON SIMON</h1>
+<p class="sub">Repeat the pattern</p>
+<div id="pad">
+    <div class="seg green" data-i="0"></div>
+    <div class="seg red" data-i="1"></div>
+    <div class="seg yellow" data-i="2"></div>
+    <div class="seg blue" data-i="3"></div>
+    <div id="core"><div id="level">0</div><div class="l">LEVEL</div></div>
+</div>
+<p class="info">Best: <span id="best">0</span></p>
+<p id="status">Press start</p>
+<button id="start-btn">START</button>
+
+<script>
+const FREQS = [330, 415, 247, 554];   // green, red, yellow, blue
+const segs = [...document.querySelectorAll(".seg")];
+const BEST_KEY = "neonSimonBest";
+let seq, input, playing, accepting;
+let best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10);
+document.getElementById("best").textContent = best;
+
+let AC = null;
+function tone(i, dur = 0.35) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = "sine"; o.frequency.value = FREQS[i];
+        g.gain.setValueAtTime(0.0001, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.2, AC.currentTime + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + dur);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + dur + 0.02); } catch (e) {}
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+function flash(i, dur) {
+    segs[i].classList.add("lit"); tone(i, dur / 1000);
+    return wait(dur).then(() => { segs[i].classList.remove("lit"); return wait(160); });
+}
+
+async function playSeq() {
+    accepting = false; document.getElementById("status").textContent = "Watch...";
+    const speed = Math.max(220, 520 - seq.length * 18);
+    await wait(500);
+    for (const i of seq) await flash(i, speed);
+    accepting = true; input = 0;
+    document.getElementById("status").textContent = "Your turn";
+}
+
+function startGame() {
+    seq = []; playing = true;
+    document.getElementById("level").textContent = "0";
+    nextRound();
+}
+function nextRound() {
+    seq.push((Math.random() * 4) | 0);
+    document.getElementById("level").textContent = seq.length;
+    playSeq();
+}
+
+function press(i) {
+    if (!accepting) return;
+    segs[i].classList.add("lit"); tone(i, 0.3);
+    setTimeout(() => segs[i].classList.remove("lit"), 180);
+    if (i === seq[input]) {
+        input++;
+        if (input === seq.length) { accepting = false; setTimeout(nextRound, 700); }
+    } else {
+        // wrong
+        accepting = false; playing = false;
+        tone(1, 0.05); setTimeout(() => { for (let k = 0; k < 4; k++) tone(0, 0.4); }, 0);
+        flashFail();
+    }
+}
+async function flashFail() {
+    document.getElementById("status").textContent = "Game over — " + (seq.length - 1) + " correct";
+    const reached = seq.length - 1;
+    if (reached > best) { best = reached; localStorage.setItem(BEST_KEY, best); document.getElementById("best").textContent = best; }
+    for (let k = 0; k < 3; k++) { segs.forEach(s => s.classList.add("lit")); await wait(140); segs.forEach(s => s.classList.remove("lit")); await wait(140); }
+}
+
+segs.forEach(s => s.addEventListener("click", () => press(+s.dataset.i)));
+document.getElementById("start-btn").addEventListener("click", () => { if (!AC) tone(0, 0.01); startGame(); });
+</script>
+</body>
+</html>

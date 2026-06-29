@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Runner</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px;
+        box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.9);
+        display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.hidden { display: none; }
+    h1 { font-size: 2.4rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.85rem; opacity: 0.85; margin-bottom: 8px; letter-spacing: 1px; }
+    .keys { font-size: 0.7rem; opacity: 0.6; line-height: 1.9; margin-bottom: 20px; letter-spacing: 1px; }
+    .keys b { color: var(--neon-blue); opacity: 1; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue); border-radius: 10px;
+        padding: 12px 38px; font-family: 'Orbitron'; font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+    .stat { color: #fff; font-size: 1.05rem; margin-bottom: 14px; letter-spacing: 1px; }
+    .stat span { color: var(--gold); text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="760" height="440"></canvas>
+    <div id="menu" class="panel">
+        <h1>NEON RUNNER</h1>
+        <p class="sub">Run, jump, stomp — reach the flag.</p>
+        <p class="keys"><b>&larr; &rarr;</b> / <b>A D</b> move &nbsp;&middot;&nbsp; <b>SPACE</b> / <b>W</b> / <b>&uarr;</b> jump (hold for higher)<br>stomp enemies from above, grab the coins</p>
+        <button id="start-btn">RUN</button>
+    </div>
+    <div id="over" class="panel hidden">
+        <h1 id="over-title">YOU WIN</h1>
+        <p class="stat">COINS <span id="final-coins">0</span></p>
+        <p class="stat" id="over-extra"></p>
+        <button id="retry-btn">RETRY</button>
+    </div>
+</div>
+
+<script>
+const W = 760, H = 440, GRAV = 1900, MAXVX = 250, ACC = 1800, FRICTION = 1400, JUMP = -560;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+let AC = null;
+function beep(f, d = 0.08, t = "square", v = 0.12) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+// --- level ---
+let solids, coins, enemies, flag, levelW;
+function buildLevel() {
+    solids = [
+        { x: 0, y: 400, w: 820, h: 80 }, { x: 920, y: 400, w: 460, h: 80 },
+        { x: 1480, y: 400, w: 680, h: 80 }, { x: 2260, y: 400, w: 980, h: 80 },
+        { x: 300, y: 320, w: 110, h: 18 }, { x: 520, y: 260, w: 110, h: 18 },
+        { x: 980, y: 320, w: 120, h: 18 }, { x: 1180, y: 250, w: 120, h: 18 },
+        { x: 1560, y: 300, w: 120, h: 18 }, { x: 1760, y: 230, w: 140, h: 18 },
+        { x: 1980, y: 320, w: 120, h: 18 }, { x: 2380, y: 300, w: 130, h: 18 },
+        { x: 2600, y: 240, w: 130, h: 18 }, { x: 2850, y: 320, w: 120, h: 18 },
+    ];
+    levelW = 3240;
+    coins = [];
+    const cpos = [[340, 285], [380, 285], [560, 225], [600, 225], [1020, 285], [1220, 215], [1600, 265],
+        [1800, 195], [1840, 195], [2020, 285], [2420, 265], [2640, 205], [2680, 205], [2890, 285],
+        [700, 360], [760, 360], [1300, 360], [1340, 360], [2100, 360], [2150, 360]];
+    for (const [x, y] of cpos) coins.push({ x, y, got: false });
+    enemies = [
+        mkEnemy(620, 360, 480, 800), mkEnemy(1550, 360, 1490, 1700),
+        mkEnemy(1620, 360, 1490, 1700), mkEnemy(2400, 360, 2300, 2600),
+        mkEnemy(2750, 360, 2620, 2950),
+    ];
+    flag = { x: 3120, y: 320, h: 80 };
+}
+function mkEnemy(x, y, minX, maxX) { return { x, y, w: 30, h: 30, dir: 1, minX, maxX, vy: 0, alive: true }; }
+
+let player, cam, coinsGot, lives, won, state = "menu";
+function reset() {
+    buildLevel();
+    player = { x: 40, y: 340, w: 26, h: 34, vx: 0, vy: 0, onGround: false, face: 1, invuln: 0 };
+    cam = 0; coinsGot = 0; lives = 3; won = false;
+}
+
+const keys = {};
+function rectsOverlap(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+function update(dt) {
+    // horizontal input
+    const left = keys.ArrowLeft || keys.a, right = keys.ArrowRight || keys.d;
+    if (left && !right) { player.vx -= ACC * dt; player.face = -1; }
+    else if (right && !left) { player.vx += ACC * dt; player.face = 1; }
+    else { const f = FRICTION * dt; if (player.vx > 0) player.vx = Math.max(0, player.vx - f); else player.vx = Math.min(0, player.vx + f); }
+    player.vx = clamp(player.vx, -MAXVX, MAXVX);
+    // jump (variable height)
+    const jump = keys[" "] || keys.w || keys.ArrowUp;
+    if (jump && player.onGround) { player.vy = JUMP; player.onGround = false; beep(520, 0.08); }
+    if (!jump && player.vy < -200) player.vy = -200;   // short hop when released early
+    player.vy += GRAV * dt;
+
+    // move + collide X
+    player.x += player.vx * dt;
+    for (const s of solids) if (rectsOverlap(player, s)) {
+        if (player.vx > 0) player.x = s.x - player.w; else if (player.vx < 0) player.x = s.x + s.w;
+        player.vx = 0;
+    }
+    player.x = clamp(player.x, 0, levelW - player.w);
+    // move + collide Y
+    player.y += player.vy * dt; player.onGround = false;
+    for (const s of solids) if (rectsOverlap(player, s)) {
+        if (player.vy > 0) { player.y = s.y - player.h; player.onGround = true; }
+        else if (player.vy < 0) { player.y = s.y + s.h; }
+        player.vy = 0;
+    }
+    if (player.invuln > 0) player.invuln -= dt;
+
+    // coins
+    for (const c of coins) if (!c.got && Math.hypot((player.x + player.w / 2) - c.x, (player.y + player.h / 2) - c.y) < 22) {
+        c.got = true; coinsGot++; beep(880, 0.06); beep(1180, 0.06);
+    }
+    // enemies
+    for (const e of enemies) {
+        if (!e.alive) continue;
+        e.x += e.dir * 60 * dt;
+        if (e.x < e.minX) { e.x = e.minX; e.dir = 1; } if (e.x + e.w > e.maxX) { e.x = e.maxX - e.w; e.dir = -1; }
+        if (rectsOverlap(player, e)) {
+            if (player.vy > 0 && player.y + player.h - e.y < 18) {   // stomp
+                e.alive = false; player.vy = -360; coinsGot += 0; beep(300, 0.1);
+            } else if (player.invuln <= 0) {
+                lives--; player.invuln = 1.2; player.vy = -300; player.vx = player.face * -200; beep(150, 0.3, "sawtooth", 0.2);
+                if (lives <= 0) endGame(false);
+            }
+        }
+    }
+    // fall in pit
+    if (player.y > H + 60) { lives--; beep(150, 0.3, "sawtooth", 0.2); if (lives <= 0) endGame(false); else respawn(); }
+    // reach flag
+    if (player.x + player.w > flag.x) endGame(true);
+
+    // camera
+    cam = clamp(player.x - W / 3, 0, levelW - W);
+}
+function respawn() { player.x = Math.max(0, cam + 60); player.y = 200; player.vx = 0; player.vy = 0; player.invuln = 1.2; }
+
+function endGame(w) {
+    state = "over"; won = w;
+    document.getElementById("over-title").textContent = w ? "FLAG REACHED!" : "GAME OVER";
+    document.getElementById("over-title").style.color = w ? "#00ff88" : "#ff3355";
+    document.getElementById("final-coins").textContent = coinsGot + " / " + coins.length;
+    document.getElementById("over-extra").textContent = w ? "All clear, runner!" : "You ran out of lives";
+    document.getElementById("over").classList.remove("hidden");
+}
+
+function draw() {
+    // sky
+    const sky = ctx.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, "#0a0f2e"); sky.addColorStop(1, "#221042");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+    // parallax hills
+    ctx.fillStyle = "rgba(80,40,120,0.4)";
+    for (let i = 0; i < 8; i++) { const hx = (i * 380 - cam * 0.3) % (W + 380) - 190; ctx.beginPath(); ctx.arc(hx + 190, H, 200, Math.PI, 0); ctx.fill(); }
+    ctx.fillStyle = "rgba(180,200,255,0.25)";
+    for (let i = 0; i < 50; i++) { const sx = (i * 211 - cam * 0.1) % W; ctx.fillRect((sx + W) % W, (i * 83) % 200, 1.5, 1.5); }
+
+    ctx.save(); ctx.translate(-cam, 0);
+    // solids
+    for (const s of solids) {
+        if (s.x + s.w < cam || s.x > cam + W) continue;
+        ctx.fillStyle = "#15243a"; ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.fillStyle = "#00f2ff"; ctx.shadowBlur = 8; ctx.shadowColor = "#00f2ff"; ctx.fillRect(s.x, s.y, s.w, 4); ctx.shadowBlur = 0;
+    }
+    // coins
+    for (const c of coins) { if (c.got) continue; const s = 8 + Math.sin(Date.now() / 200 + c.x) * 1.5;
+        ctx.fillStyle = "#ffd700"; ctx.shadowBlur = 10; ctx.shadowColor = "#ffd700";
+        ctx.beginPath(); ctx.ellipse(c.x, c.y, Math.abs(Math.cos(Date.now() / 250 + c.x)) * 6 + 2, s, 0, 0, 6.28); ctx.fill(); ctx.shadowBlur = 0; }
+    // flag
+    ctx.fillStyle = "#888"; ctx.fillRect(flag.x, flag.y - flag.h, 5, flag.h);
+    ctx.fillStyle = "#00ff88"; ctx.shadowBlur = 10; ctx.shadowColor = "#00ff88";
+    ctx.beginPath(); ctx.moveTo(flag.x + 5, flag.y - flag.h); ctx.lineTo(flag.x + 40, flag.y - flag.h + 12); ctx.lineTo(flag.x + 5, flag.y - flag.h + 24); ctx.fill(); ctx.shadowBlur = 0;
+    // enemies
+    for (const e of enemies) { if (!e.alive) continue;
+        ctx.fillStyle = "#ff3355"; ctx.shadowBlur = 8; ctx.shadowColor = "#ff3355";
+        ctx.beginPath(); ctx.roundRect(e.x, e.y, e.w, e.h, 6); ctx.fill(); ctx.shadowBlur = 0;
+        ctx.fillStyle = "#fff"; ctx.fillRect(e.x + 6, e.y + 8, 6, 6); ctx.fillRect(e.x + 18, e.y + 8, 6, 6);
+        ctx.fillStyle = "#000"; ctx.fillRect(e.x + 8 + e.dir * 2, e.y + 10, 3, 3); ctx.fillRect(e.x + 20 + e.dir * 2, e.y + 10, 3, 3); }
+    // player
+    if (!(player.invuln > 0 && Math.floor(player.invuln * 12) % 2)) {
+        const x = player.x, y = player.y;
+        ctx.fillStyle = "#00f2ff"; ctx.shadowBlur = 10; ctx.shadowColor = "#00f2ff";
+        ctx.beginPath(); ctx.roundRect(x, y, player.w, player.h, 6); ctx.fill(); ctx.shadowBlur = 0;
+        ctx.fillStyle = "#fff"; ctx.fillRect(x + (player.face > 0 ? 14 : 6), y + 8, 6, 6);
+        ctx.fillStyle = "#012"; ctx.fillRect(x + (player.face > 0 ? 17 : 9), y + 10, 3, 3);
+    }
+    ctx.restore();
+    // HUD
+    ctx.fillStyle = "#ffd700"; ctx.font = "bold 18px Orbitron"; ctx.textAlign = "left"; ctx.fillText("◆ " + coinsGot, 14, 28);
+    ctx.fillStyle = "#ff3355"; ctx.textAlign = "right";
+    for (let i = 0; i < lives; i++) { ctx.fillText("♥", W - 14 - i * 22, 28); }
+    ctx.textAlign = "left";
+    // progress bar
+    ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.fillRect(W / 2 - 90, 16, 180, 6);
+    ctx.fillStyle = "#00ff88"; ctx.fillRect(W / 2 - 90, 16, 180 * clamp(player.x / flag.x, 0, 1), 6);
+}
+
+let last = 0;
+function loop(ts) { const dt = Math.min((ts - last) / 1000, 0.04); last = ts; if (state === "playing") update(dt); draw(); requestAnimationFrame(loop); }
+
+function start() {
+    if (!AC) beep(440);
+    reset(); state = "playing";
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("over").classList.add("hidden");
+}
+
+window.addEventListener("keydown", e => { keys[e.key] = true; if (["ArrowLeft", "ArrowRight", "ArrowUp", " ", "w", "a", "d"].includes(e.key)) e.preventDefault(); });
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+document.getElementById("start-btn").addEventListener("click", start);
+document.getElementById("retry-btn").addEventListener("click", start);
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
