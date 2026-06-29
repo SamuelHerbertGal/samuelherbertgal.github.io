@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Blackjack</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: radial-gradient(circle at 50% 0%, #0c3320 0%, #04060c 70%); color: var(--neon-blue);
+        font-family: 'Orbitron', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; }
+    h1 { font-size: 2rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 18px var(--neon-pink); margin-bottom: 4px; }
+    .bank { color: var(--gold); font-size: 1.1rem; margin-bottom: 14px; text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+    .area { width: 560px; max-width: 100%; }
+    .label { font-size: 0.7rem; letter-spacing: 2px; opacity: 0.7; margin: 8px 0 4px; }
+    .hand { min-height: 110px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .card { width: 64px; height: 92px; border-radius: 8px; background: #0a1424; border: 1.5px solid rgba(0,242,255,0.5);
+        position: relative; font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+    .card.back { background: repeating-linear-gradient(45deg, #16263f, #16263f 6px, #0e1a2e 6px, #0e1a2e 12px); }
+    .card .c { position: absolute; padding: 4px 6px; font-size: 0.9rem; } .card .tl { top: 0; left: 0; }
+    .card .big { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 1.7rem; }
+    .red { color: #ff5a7a; } .black { color: #cfe3ff; }
+    .val { color: #fff; font-size: 0.95rem; margin-left: 8px; }
+    .row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; justify-content: center; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue); border-radius: 9px;
+        padding: 11px 22px; font-family: 'Orbitron'; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: 0.15s; letter-spacing: 1px; }
+    button:hover:not(:disabled) { background: var(--neon-blue); color: #000; box-shadow: 0 0 18px var(--neon-blue); }
+    button:disabled { opacity: 0.35; cursor: default; }
+    .chip { border-color: var(--gold); color: var(--gold); }
+    .chip:hover:not(:disabled) { background: var(--gold); color: #000; }
+    #msg { margin-top: 14px; font-size: 1.2rem; font-weight: 700; height: 28px; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+<h1>BLACKJACK</h1>
+<div class="bank">◆ <span id="bank">1000</span> · Bet <span id="bet">0</span></div>
+<div class="area">
+    <div class="label">DEALER <span class="val" id="dval"></span></div>
+    <div class="hand" id="dealer"></div>
+    <div class="label">YOU <span class="val" id="pval"></span></div>
+    <div class="hand" id="player"></div>
+</div>
+<div id="msg"></div>
+<div class="row" id="betrow">
+    <button class="chip" data-b="25">Bet 25</button>
+    <button class="chip" data-b="100">Bet 100</button>
+    <button class="chip" data-b="250">Bet 250</button>
+    <button class="chip" data-b="500">Bet 500</button>
+</div>
+<div class="row" id="actrow" style="display:none">
+    <button id="hit">Hit</button><button id="stand">Stand</button><button id="double">Double</button>
+</div>
+
+<script>
+const SUITS = ["♥", "♦", "♣", "♠"], RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+let deck, dealer, player, bank = 1000, bet = 0, phase = "bet", hideHole = true;
+const $ = id => document.getElementById(id);
+let AC = null; function beep(f, d = 0.07, v = 0.1) { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } } try { const o = AC.createOscillator(), g = AC.createGain(); o.type = "square"; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d); o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {} }
+
+function newDeck() { deck = []; for (let s = 0; s < 4; s++) for (let r = 0; r < 13; r++) deck.push({ s, r }); for (let i = deck.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0;[deck[i], deck[j]] = [deck[j], deck[i]]; } }
+function val(hand) { let v = 0, aces = 0; for (const c of hand) { let n = c.r === 0 ? 11 : Math.min(10, c.r + 1); if (c.r === 0) aces++; v += n; } while (v > 21 && aces) { v -= 10; aces--; } return v; }
+function deal(amount) {
+    if (phase !== "bet" || amount > bank) return;
+    bet = amount; bank -= amount; newDeck();
+    player = [deck.pop(), deck.pop()]; dealer = [deck.pop(), deck.pop()];
+    phase = "play"; hideHole = true; $("betrow").style.display = "none"; $("actrow").style.display = "flex"; $("msg").textContent = "";
+    beep(440); render();
+    if (val(player) === 21) stand();   // natural
+}
+function hit() { if (phase !== "play") return; player.push(deck.pop()); beep(520); render(); if (val(player) > 21) finish(); }
+function double() { if (phase !== "play" || player.length !== 2 || bet > bank) return; bank -= bet; bet *= 2; player.push(deck.pop()); beep(620); render(); if (val(player) > 21) finish(); else stand(); }
+function stand() { if (phase !== "play") return; phase = "dealer"; hideHole = false; render(); dealerPlay(); }
+function dealerPlay() {
+    const step = () => { if (val(dealer) < 17) { dealer.push(deck.pop()); beep(300); render(); setTimeout(step, 500); } else finish(); };
+    setTimeout(step, 500);
+}
+function finish() {
+    hideHole = false; phase = "done"; const p = val(player), d = val(dealer); let m, col, win = 0;
+    const natural = player.length === 2 && p === 21;
+    if (p > 21) { m = "BUST — you lose"; col = "#ff3355"; }
+    else if (natural && !(dealer.length === 2 && d === 21)) { win = bet * 2.5; m = "BLACKJACK! +" + Math.round(bet * 1.5); col = "#ffd700"; }
+    else if (d > 21) { win = bet * 2; m = "Dealer busts — you win!"; col = "#00ff88"; }
+    else if (p > d) { win = bet * 2; m = "You win!"; col = "#00ff88"; }
+    else if (p < d) { m = "Dealer wins"; col = "#ff3355"; }
+    else { win = bet; m = "Push"; col = "#9bd"; }
+    bank += Math.round(win); bet = 0; phase = "bet";
+    $("msg").textContent = m; $("msg").style.color = col;
+    $("actrow").style.display = "none"; $("betrow").style.display = "flex";
+    beep(win > 0 ? 880 : 160, 0.2); render();
+    if (bank <= 0) { bank = 1000; $("msg").textContent = "Busted out — house stakes you 1000."; }
+}
+function cardEl(c, hidden) {
+    const e = document.createElement("div"); e.className = "card" + (hidden ? " back" : "");
+    if (!hidden) { const col = c.s < 2 ? "red" : "black"; e.innerHTML = `<div class="c tl ${col}">${RANKS[c.r]}${SUITS[c.s]}</div><div class="big ${col}">${SUITS[c.s]}</div>`; }
+    return e;
+}
+function render() {
+    $("bank").textContent = bank; $("bet").textContent = bet;
+    const pe = $("player"), de = $("dealer"); pe.innerHTML = ""; de.innerHTML = "";
+    player && player.forEach(c => pe.appendChild(cardEl(c, false)));
+    dealer && dealer.forEach((c, i) => de.appendChild(cardEl(c, hideHole && i === 1)));
+    $("pval").textContent = player ? val(player) : "";
+    $("dval").textContent = dealer ? (hideHole ? val([dealer[0]]) + " +?" : val(dealer)) : "";
+    $("double").disabled = !(player && player.length === 2 && bet <= bank);
+    document.querySelectorAll(".chip").forEach(b => b.disabled = +b.dataset.b > bank);
+}
+document.querySelectorAll(".chip").forEach(b => b.onclick = () => deal(+b.dataset.b));
+$("hit").onclick = hit; $("stand").onclick = stand; $("double").onclick = double;
+render();
+</script>
+</body>
+</html>

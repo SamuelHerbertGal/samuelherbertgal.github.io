@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bubble Shooter</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px; box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; cursor: crosshair; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.92); display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; border-radius: 6px; z-index: 5; padding: 24px; }
+    .panel.show { display: flex; }
+    h1 { font-size: 2.2rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 8px; }
+    .sub { font-size: 0.85rem; opacity: 0.85; margin-bottom: 18px; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue); border-radius: 10px; padding: 12px 36px; font-family: 'Orbitron'; font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: 0.2s; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 28px var(--neon-blue); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="480" height="600"></canvas>
+    <div id="menu" class="panel show"><h1>BUBBLE SHOOTER</h1><p class="sub">Aim with the mouse, click to fire. Match 3+ to pop.</p><button id="start">PLAY</button></div>
+    <div id="over" class="panel"><h1 id="ovt">GAME OVER</h1><p class="sub" id="ovs"></p><button id="retry">PLAY AGAIN</button></div>
+</div>
+<script>
+const W = 480, H = 600, R = 20, COLS = 12, ROWS = 14;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const COLORS = ["#ff3355", "#ffd700", "#00ff88", "#00f2ff", "#c850ff"];
+let grid, shooter, cur, next, score, state = "menu", aim;
+let AC = null; function beep(f, d = 0.06, v = 0.1) { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } } try { const o = AC.createOscillator(), g = AC.createGain(); o.type = "square"; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d); o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {} }
+
+const cellX = (r, c) => c * R * 2 + R + (r % 2 ? R : 0);
+const cellY = r => r * R * 1.8 + R;
+function reset() {
+    grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    for (let r = 0; r < 5; r++) for (let c = 0; c < COLS - (r % 2); c++) grid[r][c] = COLORS[Math.random() * COLORS.length | 0];
+    shooter = { x: W / 2, y: H - 28 }; cur = rndColor(); next = rndColor(); score = 0; aim = -Math.PI / 2;
+}
+function rndColor() { const present = new Set(); grid && grid.forEach(row => row.forEach(c => c && present.add(c))); const pool = present.size ? [...present] : COLORS; return pool[Math.random() * pool.length | 0]; }
+function nearestCell(x, y) {
+    let best = null, bd = 1e9;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS - (r % 2); c++) { if (grid[r][c]) continue; const cx = cellX(r, c), cy = cellY(r); const d = (cx - x) ** 2 + (cy - y) ** 2; if (d < bd) { bd = d; best = [r, c]; } }
+    return best;
+}
+function neighbors(r, c) {
+    const odd = r % 2, out = [[r, c - 1], [r, c + 1], [r - 1, c], [r + 1, c], [r - 1, c + (odd ? 1 : -1)], [r + 1, c + (odd ? 1 : -1)]];
+    return out.filter(([rr, cc]) => rr >= 0 && cc >= 0 && rr < ROWS && cc < COLS - (rr % 2));
+}
+function cluster(r, c, color, matchColor) {
+    const seen = new Set(), stack = [[r, c]], out = [];
+    while (stack.length) { const [rr, cc] = stack.pop(), k = rr + "," + cc; if (seen.has(k)) continue; seen.add(k); if (!grid[rr][cc]) continue; if (matchColor && grid[rr][cc] !== color) continue; out.push([rr, cc]); for (const n of neighbors(rr, cc)) stack.push(n); }
+    return out;
+}
+function settle(x, y, color) {
+    const cell = nearestCell(x, y); if (!cell) return gameOver();
+    const [r, c] = cell; grid[r][c] = color; beep(440);
+    const same = cluster(r, c, color, true);
+    if (same.length >= 3) { for (const [rr, cc] of same) grid[rr][cc] = null; score += same.length * 10; beep(700, 0.1); dropFloating(); }
+    if (r >= ROWS - 2) return gameOver();
+    if (grid[0].every(v => !v) && grid.every(row => row.every(v => !v))) { score += 500; reset(); }
+}
+function dropFloating() {
+    const attached = new Set();
+    for (let c = 0; c < COLS; c++) if (grid[0][c]) for (const [rr, cc] of cluster(0, c, null, false)) attached.add(rr + "," + cc);
+    let dropped = 0;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r][c] && !attached.has(r + "," + c)) { grid[r][c] = null; dropped++; }
+    if (dropped) { score += dropped * 15; beep(900, 0.12); }
+}
+function shoot() {
+    if (state !== "play" || shooter.flying) return;
+    shooter.flying = { x: shooter.x, y: shooter.y, vx: Math.cos(aim) * 9, vy: Math.sin(aim) * 9, color: cur };
+    cur = next; next = rndColor();
+}
+function update() {
+    if (state !== "play") return;
+    const f = shooter.flying; if (!f) return;
+    for (let i = 0; i < 3; i++) {
+        f.x += f.vx / 3; f.y += f.vy / 3;
+        if (f.x < R) { f.x = R; f.vx *= -1; } if (f.x > W - R) { f.x = W - R; f.vx *= -1; }
+        if (f.y < R) { settle(f.x, f.y, f.color); shooter.flying = null; return; }
+        // collision with grid bubble
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS - (r % 2); c++) if (grid[r][c]) { const dx = cellX(r, c) - f.x, dy = cellY(r) - f.y; if (dx * dx + dy * dy < (R * 1.9) ** 2) { settle(f.x, f.y, f.color); shooter.flying = null; return; } }
+    }
+}
+function gameOver() { state = "over"; document.getElementById("ovt").textContent = "GAME OVER"; document.getElementById("ovs").textContent = "Score " + score; document.getElementById("over").classList.add("show"); beep(160, 0.4); }
+function bub(x, y, color, rad) { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, rad || R - 1, 0, 7); ctx.fill(); ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.beginPath(); ctx.arc(x - rad * 0.3 || x - 6, y - 6, (rad || R) * 0.3, 0, 7); ctx.fill(); }
+function draw() {
+    ctx.fillStyle = "#06060f"; ctx.fillRect(0, 0, W, H);
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS - (r % 2); c++) if (grid[r][c]) bub(cellX(r, c), cellY(r), grid[r][c]);
+    // danger line
+    ctx.strokeStyle = "rgba(255,51,85,0.4)"; ctx.setLineDash([8, 8]); ctx.beginPath(); ctx.moveTo(0, cellY(ROWS - 2)); ctx.lineTo(W, cellY(ROWS - 2)); ctx.stroke(); ctx.setLineDash([]);
+    // aim guide
+    if (state === "play" && !shooter.flying) { ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(shooter.x, shooter.y); ctx.lineTo(shooter.x + Math.cos(aim) * 90, shooter.y + Math.sin(aim) * 90); ctx.stroke(); }
+    // flying
+    if (shooter.flying) bub(shooter.flying.x, shooter.flying.y, shooter.flying.color);
+    // shooter + next
+    if (state === "play") { bub(shooter.x, shooter.y, cur); bub(44, H - 28, next, 13); ctx.fillStyle = "#9bd"; ctx.font = "10px Orbitron"; ctx.fillText("NEXT", 30, H - 48); }
+    ctx.fillStyle = "#fff"; ctx.font = "bold 18px Orbitron"; ctx.textAlign = "left"; ctx.fillText("SCORE " + score, 12, 26); ctx.textAlign = "left";
+}
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+function start() { if (!AC) beep(440); reset(); state = "play"; document.getElementById("menu").classList.remove("show"); document.getElementById("over").classList.remove("show"); }
+canvas.addEventListener("mousemove", e => { const r = canvas.getBoundingClientRect(); const mx = (e.clientX - r.left) * (W / r.width), my = (e.clientY - r.top) * (H / r.height); aim = Math.atan2(my - shooter.y, mx - shooter.x); if (aim > -0.15) aim = aim < Math.PI / 2 ? -0.15 : -Math.PI + 0.15; });
+canvas.addEventListener("click", shoot);
+document.getElementById("start").onclick = start; document.getElementById("retry").onclick = start;
+reset(); loop();
+</script>
+</body>
+</html>

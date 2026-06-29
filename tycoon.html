@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rags to Riches</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px; box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; }
+    #toast { position: absolute; left: 50%; top: 46%; transform: translateX(-50%); font-size: 1.5rem; font-weight: 900;
+        font-style: italic; pointer-events: none; opacity: 0; transition: opacity .2s, top .3s; text-shadow: 0 0 16px currentColor; z-index: 6; }
+    .overlay { position: absolute; inset: 0; background: rgba(3,4,14,0.92); display: none; flex-direction: column;
+        align-items: center; justify-content: center; text-align: center; border-radius: 6px; z-index: 8; padding: 22px; }
+    .overlay.show { display: flex; }
+    h1 { font-size: 2rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 18px var(--neon-pink); margin-bottom: 4px; }
+    h2 { font-size: 1.4rem; color: var(--gold); margin-bottom: 8px; }
+    .sub { font-size: 0.78rem; opacity: 0.8; margin-bottom: 16px; letter-spacing: 1px; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue); border-radius: 9px;
+        padding: 11px 26px; font-family: 'Orbitron'; font-size: 0.9rem; font-weight: 700; cursor: pointer; transition: 0.15s;
+        text-transform: uppercase; letter-spacing: 1px; }
+    button:hover:not(:disabled) { background: var(--neon-blue); color: #000; box-shadow: 0 0 22px var(--neon-blue); }
+    button:disabled { opacity: 0.4; cursor: default; }
+    #work-btn { border-color: var(--gold); color: var(--gold); font-size: 1.05rem; margin-top: 12px; }
+    #work-btn:hover:not(:disabled) { background: var(--gold); color: #000; box-shadow: 0 0 22px var(--gold); }
+    .leave { border-color: #889; color: #aab; margin-top: 14px; padding: 8px 22px; font-size: 0.72rem; }
+    .leave:hover { background: #889; color: #000; box-shadow: none; }
+    #wmeter { display: block; border-radius: 8px; background: #06080f; margin: 6px 0; }
+    #qlabel { font-size: 0.9rem; font-weight: 700; height: 20px; }
+    .market { width: 430px; max-width: 100%; }
+    .asset { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; text-align: left;
+        border: 1.5px solid rgba(0,242,255,0.3); border-radius: 10px; padding: 9px 12px; }
+    .asset .info { flex: 1; } .asset .nm { color: #fff; font-size: 0.85rem; font-weight: 700; } .asset .ds { font-size: 0.62rem; opacity: 0.7; }
+    .asset .own { color: var(--green); font-size: 0.72rem; min-width: 28px; text-align: center; }
+    .asset button { padding: 8px 12px; font-size: 0.68rem; border-color: var(--gold); color: var(--gold); min-width: 92px; }
+    .asset button:hover:not(:disabled) { background: var(--gold); color: #000; }
+    #menu { z-index: 9; }
+    #menu .keys { font-size: 0.72rem; opacity: 0.6; line-height: 1.9; margin-bottom: 20px; max-width: 460px; }
+    #menu .keys b { color: var(--neon-blue); opacity: 1; }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="760" height="560"></canvas>
+    <div id="toast"></div>
+
+    <div id="work-overlay" class="overlay">
+        <h2 id="wo-title">First National Bank</h2>
+        <p class="sub" id="wo-sub">Hit the center for top-quality work</p>
+        <canvas id="wmeter" width="430" height="50"></canvas>
+        <div id="qlabel"></div>
+        <button id="work-btn">▶ WORK (Space)</button>
+        <button class="leave" id="wo-leave">Clock out (Esc)</button>
+    </div>
+
+    <div id="market-overlay" class="overlay">
+        <h2>📈 Brokerage</h2>
+        <p class="sub">Buy assets — they pay passive income every day you sleep</p>
+        <div class="market" id="market"></div>
+        <button class="leave" id="mk-leave">Leave (Esc)</button>
+    </div>
+
+    <div id="shop-overlay" class="overlay">
+        <h2>🛒 City Mart</h2>
+        <p class="sub">Gear boosts your career for good · snacks restore energy now</p>
+        <div class="market" id="shop"></div>
+        <button class="leave" id="sh-leave">Leave (Esc)</button>
+    </div>
+
+    <div id="menu" class="overlay show">
+        <h1>RAGS TO RICHES</h1>
+        <p class="sub">A broke nobody in Neon City. Make your first million.</p>
+        <p class="keys"><b>WASD</b> / <b>arrows</b> to walk around town · <b>E</b> to enter a building<br>
+        🏦 <b>Bank</b> work for cash &amp; promotions · 🏠 <b>Home</b> sleep · ☕ <b>Café</b> energy<br>
+        🎓 <b>Academy</b> train skills · 📈 <b>Brokerage</b> invest · Goal: <b>$1,000,000</b> net worth</p>
+        <button id="start-btn">ENTER THE CITY</button>
+    </div>
+
+    <div id="win-overlay" class="overlay">
+        <h1 style="color:var(--gold);text-shadow:0 0 30px var(--gold)">YOU'RE RICH!</h1>
+        <p class="sub" id="win-sub"></p>
+        <button id="win-btn">PLAY AGAIN</button>
+    </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const canvas = $("c"), ctx = canvas.getContext("2d");
+const W = 760, H = 560, TOP = 44, BOT = 30, clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const GOAL = 1000000;
+
+const JOBS = [
+    { title: "Intern", pay: 6 }, { title: "Junior Associate", pay: 14 }, { title: "Associate", pay: 28 },
+    { title: "Senior Associate", pay: 55 }, { title: "Team Lead", pay: 100 }, { title: "Manager", pay: 190 },
+    { title: "Senior Manager", pay: 350 }, { title: "Director", pay: 650 }, { title: "Vice President", pay: 1200 },
+    { title: "Senior VP", pay: 2200 }, { title: "Chief Officer", pay: 4200 }, { title: "CEO", pay: 8000 },
+    { title: "Founder & Tycoon", pay: 15000 },
+];
+const ASSETS = [
+    { name: "Savings Bonds", base: 400, income: 7, owned: 0 },
+    { name: "Index Fund", base: 2200, income: 42, owned: 0 },
+    { name: "Rental Condo", base: 12000, income: 250, owned: 0 },
+    { name: "Startup Equity", base: 60000, income: 1500, owned: 0 },
+    { name: "Downtown Skyscraper", base: 260000, income: 7000, owned: 0 },
+];
+const BUILDINGS = [
+    { type: "work", name: "BANK", icon: "🏦", x: 60, y: 70, w: 160, h: 105, col: "#00f2ff" },
+    { type: "shop", name: "MART", icon: "🛒", x: 236, y: 80, w: 104, h: 94, col: "#ff6ad5" },
+    { type: "home", name: "HOME", icon: "🏠", x: 560, y: 70, w: 150, h: 105, col: "#00ff88" },
+    { type: "cafe", name: "CAFÉ", icon: "☕", x: 70, y: 350, w: 130, h: 95, col: "#ff8c42" },
+    { type: "academy", name: "ACADEMY", icon: "🎓", x: 300, y: 380, w: 170, h: 100, col: "#ff00ff" },
+    { type: "market", name: "BROKERAGE", icon: "📈", x: 560, y: 350, w: 150, h: 105, col: "#ffd700" },
+];
+const GOODS = [
+    { id: "drink", name: "Energy Drink", icon: "🥤", cost: 25, kind: "use", desc: "+50 energy right now", apply() { energy = Math.min(maxEnergy, energy + 50); } },
+    { id: "meal", name: "Hot Meal", icon: "🍔", cost: 45, kind: "use", desc: "+75 energy right now", apply() { energy = Math.min(maxEnergy, energy + 75); } },
+    { id: "chair", name: "Ergonomic Chair", icon: "🪑", cost: 800, kind: "gear", desc: "Work tires you less (−3 energy/task)", apply() { energyCut += 3; } },
+    { id: "laptop", name: "Laptop", icon: "💻", cost: 1500, kind: "gear", desc: "+15% pay from work", apply() { payMult *= 1.15; } },
+    { id: "gym", name: "Gym Membership", icon: "🏋️", cost: 1800, kind: "gear", desc: "+40 max energy", apply() { maxEnergy += 40; energy = maxEnergy; } },
+    { id: "phone", name: "Smartphone", icon: "📱", cost: 2500, kind: "gear", desc: "+12% to all income", apply() { payMult *= 1.12; incomeMult *= 1.12; } },
+    { id: "suit", name: "Business Suit", icon: "👔", cost: 3500, kind: "gear", desc: "+30% promotion progress", apply() { perfMult *= 1.3; } },
+    { id: "car", name: "Sports Car", icon: "🚗", cost: 12000, kind: "gear", desc: "Zip around town faster", apply() { moveSpeed = 1.7; } },
+    { id: "watch", name: "Luxury Watch", icon: "⌚", cost: 30000, kind: "gear", desc: "Pure flex — adds to net worth", apply() {} },
+];
+BUILDINGS.forEach(b => b.door = { x: b.x + b.w / 2 - 24, y: b.y + b.h, w: 48, h: 26 });
+
+let money, energy, day, jobLevel, perf, skill, invested, state;
+let player, needle, vel, zoneHalf, lastMsg;
+let payMult, perfMult, incomeMult, energyCut, maxEnergy, moveSpeed, ownedGoods;
+const keys = {};
+
+let AC = null;
+function beep(f, d = 0.06, t = "square", v = 0.1) {
+    if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    try { const o = AC.createOscillator(), g = AC.createGain();
+        o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d);
+        o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+function fmt(n) { n = Math.round(n); const s = n < 0 ? "-" : "", a = Math.abs(n);
+    if (a >= 1e6) return s + "$" + (a / 1e6).toFixed(2) + "M"; if (a >= 1e3) return s + "$" + (a / 1e3).toFixed(1) + "k"; return s + "$" + a; }
+const assetCost = a => Math.round(a.base * Math.pow(1.18, a.owned));
+const promoNeed = () => Math.round(100 * Math.pow(1.45, jobLevel));
+const passivePerDay = () => ASSETS.reduce((s, a) => s + a.owned * a.income, 0);
+const dailyCost = () => 25 + jobLevel * 12;
+const trainCost = () => Math.round(60 * Math.pow(1.4, skill - 1));
+const coffeeCost = () => 15;
+const netWorth = () => money + invested;
+const workCost = () => Math.max(4, 10 - (skill - 1) * 0.4 - energyCut);
+
+function reset() {
+    money = 0; day = 1; jobLevel = 0; perf = 0; skill = 1; invested = 0;
+    payMult = 1; perfMult = 1; incomeMult = 1; energyCut = 0; maxEnergy = 100; moveSpeed = 1; ownedGoods = new Set();
+    energy = maxEnergy;
+    ASSETS.forEach(a => a.owned = 0);
+    player = { x: 300, y: 330, r: 11, dir: 1, phase: 0, moving: false };
+    needle = 0; vel = 0.9; zoneHalf = 0.22; lastMsg = "Welcome to Neon City. Walk to the 🏦 Bank and press E to work.";
+    buildMarket(); buildShop();
+}
+function toast(text, col) { const t = $("toast"); t.textContent = text; t.style.color = col; t.style.opacity = "1"; t.style.top = "40%"; setTimeout(() => { t.style.opacity = "0"; t.style.top = "32%"; }, 650); }
+function msg(s) { lastMsg = s; }
+
+// ---- focus meter ----
+const wmeter = $("wmeter"), wmx = wmeter.getContext("2d");
+function drawMeter() {
+    const w = wmeter.width, h = wmeter.height; wmx.clearRect(0, 0, w, h);
+    wmx.fillStyle = "#06080f"; wmx.fillRect(0, 0, w, h);
+    const cx = w / 2;
+    wmx.fillStyle = "rgba(0,255,136,0.18)"; wmx.fillRect(cx - zoneHalf * w, 0, zoneHalf * 2 * w, h);
+    wmx.fillStyle = "rgba(255,215,0,0.5)"; wmx.fillRect(cx - 0.04 * w, 0, 0.08 * w, h);
+    wmx.strokeStyle = "rgba(0,242,255,0.25)"; wmx.strokeRect(0.5, 0.5, w - 1, h - 1);
+    const nx = needle * w; wmx.fillStyle = "#fff"; wmx.shadowBlur = 12; wmx.shadowColor = "#fff"; wmx.fillRect(nx - 2, 0, 4, h); wmx.shadowBlur = 0;
+}
+const quality = () => Math.max(0.3, 2 - Math.abs(needle - 0.5) / 0.25);
+function qLabel(q) { if (q >= 1.7) return ["PERFECT", "#ffd700"]; if (q >= 1.2) return ["GREAT", "#00ff88"]; if (q >= 0.8) return ["OK", "#00f2ff"]; return ["SLOPPY", "#ff3355"]; }
+
+// ---- actions ----
+function work() {
+    if (state !== "work") return;
+    if (energy < workCost()) { toast("Too tired!", "#ff3355"); beep(150, 0.15); return; }
+    energy -= workCost();
+    const q = quality(), [lbl, col] = qLabel(q);
+    const pay = Math.round(JOBS[jobLevel].pay * q * (1 + (skill - 1) * 0.08) * payMult), pg = q * 15 * perfMult;
+    money += pay; perf += pg;
+    $("qlabel").textContent = lbl + "  +" + fmt(pay); $("qlabel").style.color = col;
+    beep(q >= 1.2 ? 740 : 380, 0.05);
+    while (perf >= promoNeed() && jobLevel < JOBS.length - 1) {
+        perf -= promoNeed(); jobLevel++;
+        toast("PROMOTED!", "#ff00ff"); beep(660, 0.15); setTimeout(() => beep(990, 0.15), 120);
+        msg("🎉 Promoted to " + JOBS[jobLevel].title + "! Now " + fmt(JOBS[jobLevel].pay) + "/task.");
+        $("wo-title").textContent = JOBS[jobLevel].title + " @ First National Bank";
+    }
+    if (jobLevel === JOBS.length - 1) perf = Math.min(perf, promoNeed());
+    zoneHalf = Math.max(0.08, 0.22 - jobLevel * 0.012);
+    vel = (vel > 0 ? 1 : -1) * (0.9 + jobLevel * 0.06);
+    checkWin();
+}
+function rest() {
+    day++; const inc = Math.round(passivePerDay() * incomeMult), cost = dailyCost(); money += inc - cost; energy = maxEnergy;
+    toast("😴 Day " + day, "#00ff88"); beep(300, 0.1);
+    msg("Slept. +" + fmt(inc) + " passive, -" + fmt(cost) + " living costs."); checkWin();
+}
+function coffee() {
+    if (money < coffeeCost()) { toast("No cash!", "#ff3355"); beep(150, 0.12); return; }
+    money -= coffeeCost(); energy = Math.min(maxEnergy, energy + 30); toast("☕ +30 energy", "#ff8c42"); beep(500, 0.06);
+    msg("Grabbed a coffee. Energy restored.");
+}
+function train() {
+    const c = trainCost(); if (money < c) { toast("Need " + fmt(c), "#ff3355"); beep(150, 0.12); return; }
+    money -= c; skill++; toast("🎓 Skill " + skill, "#ff00ff"); beep(700, 0.1);
+    msg("Trained up — skill is now " + skill + ".");
+}
+function buy(i) {
+    const a = ASSETS[i], c = assetCost(a); if (money < c) { beep(150, 0.12); return; }
+    money -= c; invested += c; a.owned++; beep(620, 0.09);
+    toast("Bought " + a.name, "#ffd700"); msg("Bought a " + a.name + " (+" + fmt(a.income) + "/day)."); buildMarket();
+}
+function checkWin() {
+    if (state !== "win" && netWorth() >= GOAL) {
+        state = "win"; closeOverlays();
+        $("win-sub").textContent = "Hit a million-dollar net worth in " + day + " days as " + JOBS[jobLevel].title + "!";
+        $("win-overlay").classList.add("show");
+        beep(660, 0.2); setTimeout(() => beep(880, 0.2), 150); setTimeout(() => beep(1180, 0.3), 300);
+    }
+}
+
+// ---- overlays ----
+function closeOverlays() { $("work-overlay").classList.remove("show"); $("market-overlay").classList.remove("show"); $("shop-overlay").classList.remove("show"); }
+function openWork() { state = "work"; $("wo-title").textContent = JOBS[jobLevel].title + " @ First National Bank"; $("qlabel").textContent = ""; $("work-overlay").classList.add("show"); }
+function openMarket() { state = "market"; buildMarket(); $("market-overlay").classList.add("show"); }
+function openShop() { state = "shop"; buildShop(); $("shop-overlay").classList.add("show"); }
+function leaveBuilding() { closeOverlays(); state = "world"; }
+
+function buildShop() {
+    const m = $("shop"); if (!m) return; m.innerHTML = "";
+    GOODS.forEach((g, i) => {
+        const owned = g.kind === "gear" && ownedGoods.has(g.id);
+        const d = document.createElement("div"); d.className = "asset";
+        d.innerHTML = `<div class="info"><div class="nm">${g.icon} ${g.name}</div><div class="ds">${g.desc}</div></div>
+            <button id="good${i}">${owned ? "OWNED" : fmt(g.cost)}</button>`;
+        m.appendChild(d);
+        const btn = $("good" + i);
+        if (owned) btn.disabled = true; else { btn.disabled = money < g.cost; btn.addEventListener("click", () => buyGood(i)); }
+    });
+}
+function buyGood(i) {
+    const g = GOODS[i];
+    if (g.kind === "gear" && ownedGoods.has(g.id)) return;
+    if (money < g.cost) { beep(150, 0.12); return; }
+    money -= g.cost;
+    if (g.kind === "gear") { ownedGoods.add(g.id); invested += g.cost; }
+    g.apply();
+    toast("Bought " + g.name, "#ff6ad5"); msg("Bought " + g.name + " — " + g.desc + "."); beep(620, 0.09);
+    buildShop(); checkWin();
+}
+
+function buildMarket() {
+    const m = $("market"); if (!m) return; m.innerHTML = "";
+    ASSETS.forEach((a, i) => {
+        const c = assetCost(a), d = document.createElement("div"); d.className = "asset";
+        d.innerHTML = `<div class="info"><div class="nm">${a.name}</div><div class="ds">+${fmt(a.income)}/day</div></div>
+            <div class="own">×${a.owned}</div><button id="buy${i}">${fmt(c)}</button>`;
+        m.appendChild(d);
+        const btn = $("buy" + i); btn.disabled = money < c; btn.addEventListener("click", () => buy(i));
+    });
+}
+
+// ---- interaction ----
+function nearBuilding() {
+    for (const b of BUILDINGS) {
+        const d = b.door;
+        if (player.x > d.x - 14 && player.x < d.x + d.w + 14 && player.y > d.y - 14 && player.y < d.y + d.h + 18) return b;
+    }
+    return null;
+}
+function interact() {
+    const b = nearBuilding(); if (!b) return;
+    if (b.type === "work") openWork();
+    else if (b.type === "home") rest();
+    else if (b.type === "cafe") coffee();
+    else if (b.type === "academy") train();
+    else if (b.type === "market") openMarket();
+    else if (b.type === "shop") openShop();
+}
+function promptText(b) {
+    if (b.type === "work") return "Press E — Work at the Bank";
+    if (b.type === "home") return "Press E — Sleep (full energy, +1 day, costs " + fmt(dailyCost()) + ")";
+    if (b.type === "cafe") return "Press E — Coffee (+30 energy, " + fmt(coffeeCost()) + ")";
+    if (b.type === "academy") return "Press E — Train skill (" + fmt(trainCost()) + ")";
+    if (b.type === "market") return "Press E — Open the Brokerage";
+    if (b.type === "shop") return "Press E — Shop at the City Mart";
+    return "";
+}
+
+// ---- world movement ----
+function moveWorld(dt) {
+    let dx = (keys.d || keys.ArrowRight ? 1 : 0) - (keys.a || keys.ArrowLeft ? 1 : 0);
+    let dy = (keys.s || keys.ArrowDown ? 1 : 0) - (keys.w || keys.ArrowUp ? 1 : 0);
+    if (dx || dy) { const m = Math.hypot(dx, dy), s = 175 * moveSpeed; player.x += dx / m * s * dt; player.y += dy / m * s * dt; player.dir = dx < 0 ? -1 : dx > 0 ? 1 : player.dir; player.moving = true; player.phase += dt * 11; }
+    else player.moving = false;
+    player.x = clamp(player.x, player.r, W - player.r);
+    player.y = clamp(player.y, TOP + player.r, H - BOT - player.r);
+    // collide with buildings
+    for (const b of BUILDINGS) {
+        const nx = clamp(player.x, b.x, b.x + b.w), ny = clamp(player.y, b.y, b.y + b.h);
+        const ddx = player.x - nx, ddy = player.y - ny, d2 = ddx * ddx + ddy * ddy;
+        if (d2 < player.r * player.r) { const d = Math.sqrt(d2) || 0.001, push = player.r - d; player.x += ddx / d * push; player.y += ddy / d * push; }
+    }
+}
+
+// ---- scenery ----
+const ROAD_H = { x: 0, y: 248, w: W, h: 54 };
+const ROAD_V = { x: 350, y: TOP, w: 54, h: H - TOP - BOT };
+const TREES = [[28, 212], [180, 225], [505, 215], [728, 168], [26, 505], [255, 522], [470, 305], [702, 500], [150, 305], [612, 305]];
+const LIGHTS = [[332, 240], [424, 240], [332, 312], [424, 312]];
+const CARS = [{ x: 150, y: 263, a: 0, c: "#d24b4b" }, { x: 560, y: 287, a: 0, c: "#3a7bd5" }, { x: 377, y: 150, a: Math.PI / 2, c: "#e0b020" }, { x: 377, y: 440, a: Math.PI / 2, c: "#46b46e" }];
+const BUSHES = [[420, 110], [472, 466], [238, 470], [620, 470], [110, 305]];
+
+function rrp(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function drawRoad(r) {
+    ctx.fillStyle = "#9aa0a8"; // sidewalk
+    if (r.w > r.h) ctx.fillRect(r.x, r.y - 7, r.w, r.h + 14); else ctx.fillRect(r.x - 7, r.y, r.w + 14, r.h);
+    ctx.fillStyle = "#3a3f47"; ctx.fillRect(r.x, r.y, r.w, r.h); // asphalt
+    ctx.strokeStyle = "#e8c84a"; ctx.lineWidth = 3; ctx.setLineDash([18, 16]); ctx.beginPath();
+    if (r.w > r.h) { ctx.moveTo(r.x, r.y + r.h / 2); ctx.lineTo(r.x + r.w, r.y + r.h / 2); } else { ctx.moveTo(r.x + r.w / 2, r.y); ctx.lineTo(r.x + r.w / 2, r.y + r.h); }
+    ctx.stroke(); ctx.setLineDash([]);
+}
+function drawTree(x, y) {
+    ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(x + 4, y + 7, 16, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#3a2a1a"; ctx.fillRect(x - 3, y - 2, 6, 10);
+    ctx.fillStyle = "#2f6b34"; ctx.beginPath(); ctx.arc(x, y - 6, 15, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#3f8a44"; ctx.beginPath(); ctx.arc(x - 5, y - 10, 9, 0, Math.PI * 2); ctx.arc(x + 6, y - 7, 8, 0, Math.PI * 2); ctx.fill();
+}
+function drawBush(x, y) { ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.beginPath(); ctx.ellipse(x + 2, y + 4, 12, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#357a3a"; ctx.beginPath(); ctx.arc(x - 5, y, 7, 0, Math.PI * 2); ctx.arc(x + 5, y, 7, 0, Math.PI * 2); ctx.arc(x, y - 4, 8, 0, Math.PI * 2); ctx.fill(); }
+function drawLight(x, y) {
+    ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.ellipse(x + 3, y + 4, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#56606a"; ctx.fillRect(x - 2, y - 22, 4, 26);
+    ctx.fillStyle = "#ffe9a0"; ctx.shadowBlur = 14; ctx.shadowColor = "#ffd24a"; ctx.beginPath(); ctx.arc(x, y - 24, 5, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+}
+function drawCar(c) {
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.a);
+    ctx.fillStyle = "rgba(0,0,0,0.3)"; rrp(-18, -9, 42, 22, 5); ctx.fill();
+    ctx.fillStyle = c.c; rrp(-20, -11, 42, 22, 5); ctx.fill();
+    ctx.fillStyle = "rgba(190,225,255,0.9)"; rrp(4, -8, 10, 16, 3); ctx.fill(); rrp(-14, -8, 8, 16, 3); ctx.fill();
+    ctx.fillStyle = "#ffe9a0"; ctx.fillRect(20, -8, 3, 5); ctx.fillRect(20, 3, 3, 5);
+    ctx.restore();
+}
+function drawBuilding(b, hl) {
+    const x = b.x, y = b.y, w = b.w, h = b.h;
+    ctx.fillStyle = "rgba(0,0,0,0.35)"; rrp(x + 5, y + 7, w, h, 4); ctx.fill();   // shadow
+    if (b.type === "work") {           // bank: stone + columns + pediment
+        ctx.fillStyle = "#cfc7a8"; ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = "#b3ab8c"; ctx.fillRect(x, y, w, 18);
+        ctx.fillStyle = "#ddd6bb"; ctx.beginPath(); ctx.moveTo(x + w * 0.2, y + 24); ctx.lineTo(x + w / 2, y + 8); ctx.lineTo(x + w * 0.8, y + 24); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "#efe9d2"; for (let i = 0; i < 5; i++) { const cx = x + 20 + i * ((w - 40) / 4); ctx.fillRect(cx - 3, y + 26, 6, h - 48); }
+        ctx.fillStyle = "#6f6850"; ctx.fillRect(x + w / 2 - 16, y + h - 26, 32, 22);
+    } else if (b.type === "home") {    // house with gabled roof + chimney
+        ctx.fillStyle = "#caa46e"; ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = "#bfe3ff"; ctx.fillRect(x + 16, y + h - 32, 18, 16); ctx.fillRect(x + w - 34, y + h - 32, 18, 16);
+        ctx.fillStyle = "#5b3a26"; ctx.fillRect(x + w / 2 - 12, y + h - 32, 24, 28);
+        ctx.fillStyle = "#4a241b"; ctx.fillRect(x + w - 32, y - 14, 12, 20);
+        ctx.fillStyle = "#7a3b2e"; ctx.fillRect(x - 5, y - 6, w + 10, h * 0.52);
+        ctx.strokeStyle = "#5e2c22"; ctx.lineWidth = 2; for (let ry = y + 2; ry < y + h * 0.46; ry += 8) { ctx.beginPath(); ctx.moveTo(x - 5, ry); ctx.lineTo(x + w + 5, ry); ctx.stroke(); }
+        ctx.fillStyle = "#9c5040"; ctx.fillRect(x - 5, y + h * 0.5 - 5, w + 10, 5);
+    } else if (b.type === "cafe") {    // café with striped awning
+        ctx.fillStyle = "#d98c5f"; ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = "#6e3f28"; ctx.fillRect(x, y, w, 14);
+        ctx.fillStyle = "#bfe3ff"; ctx.fillRect(x + 14, y + 24, w - 28, h - 62);
+        for (let i = 0; i * 16 < w; i++) { ctx.fillStyle = i % 2 ? "#fff" : "#c0392b"; ctx.fillRect(x + i * 16, y + h - 26, Math.min(16, w - i * 16), 12); }
+    } else if (b.type === "academy") { // brick + clock
+        ctx.fillStyle = "#9c4434"; ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = "rgba(0,0,0,0.18)"; ctx.lineWidth = 1; for (let ry = y + 9; ry < y + h; ry += 10) { ctx.beginPath(); ctx.moveTo(x, ry); ctx.lineTo(x + w, ry); ctx.stroke(); }
+        ctx.fillStyle = "#cfcfcf"; ctx.fillRect(x + w / 2 - 22, y + 8, 44, 12);
+        ctx.fillStyle = "#eee"; ctx.beginPath(); ctx.arc(x + w / 2, y + 36, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#333"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x + w / 2, y + 36); ctx.lineTo(x + w / 2, y + 30); ctx.moveTo(x + w / 2, y + 36); ctx.lineTo(x + w / 2 + 5, y + 38); ctx.stroke();
+        ctx.fillStyle = "#5b2a20"; ctx.fillRect(x + w / 2 - 13, y + h - 26, 26, 22);
+    } else if (b.type === "shop") {    // market hall: awning + produce crates
+        ctx.fillStyle = "#caa46e"; ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = "#3a7d44"; ctx.fillRect(x, y, w, 16);
+        for (let i = 0; i * 18 < w; i++) { ctx.fillStyle = i % 2 ? "#fff" : "#ff6ad5"; ctx.fillRect(x + i * 18, y + 18, Math.min(18, w - i * 18), 14); }
+        ctx.fillStyle = "#bfe3ff"; ctx.fillRect(x + 12, y + 38, w - 24, h - 76);
+        const cc = ["#ff5555", "#ffcc33", "#66cc55", "#ff8c42"], cw = (w - 24) / 4;
+        for (let i = 0; i < 4; i++) { ctx.fillStyle = "#7a5230"; ctx.fillRect(x + 12 + i * cw, y + h - 28, cw - 4, 22); ctx.fillStyle = cc[i]; ctx.fillRect(x + 15 + i * cw, y + h - 28, cw - 10, 8); }
+    } else {                           // brokerage: glass tower
+        ctx.fillStyle = "#23415f"; ctx.fillRect(x, y, w, h);
+        for (let wy = y + 12; wy < y + h - 6; wy += 16) for (let wx = x + 10; wx < x + w - 8; wx += 18) { ctx.fillStyle = (wx + wy) % 2 ? "rgba(150,200,255,0.22)" : "rgba(110,170,230,0.32)"; ctx.fillRect(wx, wy, 14, 12); }
+        ctx.fillStyle = "#1a3047"; ctx.fillRect(x, y, w, 10); ctx.fillRect(x + 14, y - 9, 20, 9); ctx.fillRect(x + w - 34, y - 7, 16, 7);
+    }
+    ctx.strokeStyle = hl ? "#ffd700" : "rgba(0,0,0,0.4)"; ctx.lineWidth = hl ? 3 : 1.5;
+    if (hl) { ctx.shadowBlur = 14; ctx.shadowColor = "#ffd700"; }
+    ctx.strokeRect(x, y, w, h); ctx.shadowBlur = 0;
+    // sign plate above
+    ctx.font = "bold 11px Orbitron"; const label = b.icon + " " + b.name, sw = ctx.measureText(label).width + 16;
+    ctx.fillStyle = "rgba(0,0,0,0.7)"; rrp(x + w / 2 - sw / 2, y - 22, sw, 17, 5); ctx.fill();
+    ctx.textAlign = "center"; ctx.fillStyle = b.col; ctx.fillText(label, x + w / 2, y - 10); ctx.textAlign = "left";
+}
+function drawPlayer() {
+    const bob = player.moving ? Math.sin(player.phase) * 1.6 : 0, x = player.x, y = player.y + bob;
+    ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(player.x, player.y + 10, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#2d6cdf"; ctx.beginPath(); ctx.ellipse(x, y + 3, 8, 9, 0, 0, Math.PI * 2); ctx.fill();   // body
+    ctx.fillStyle = "#f0c49a"; ctx.beginPath(); ctx.arc(x, y - 6, 6, 0, Math.PI * 2); ctx.fill();             // head
+    ctx.fillStyle = "#4a3526"; ctx.beginPath(); ctx.arc(x, y - 7, 6, Math.PI, Math.PI * 2); ctx.fill();        // hair
+    ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(x + player.dir * 3, y - 6, 1.6, 0, Math.PI * 2); ctx.fill();
+}
+
+// ---- draw ----
+function drawWorld() {
+    ctx.fillStyle = "#274f2c"; ctx.fillRect(0, TOP, W, H - TOP - BOT);   // grass
+    ctx.fillStyle = "rgba(255,255,255,0.025)"; for (let i = 0; i < 150; i++) { const gx = (i * 131) % W, gy = TOP + ((i * 197) % (H - TOP - BOT)); ctx.fillRect(gx, gy, 2, 2); }
+    drawRoad(ROAD_H); drawRoad(ROAD_V);
+    // crosswalks at the central intersection
+    ctx.fillStyle = "#e8eef2";
+    for (let i = 0; i < 5; i++) { ctx.fillRect(ROAD_V.x - 34, ROAD_H.y + 6 + i * 10, 9, 6); ctx.fillRect(ROAD_V.x + ROAD_V.w + 25, ROAD_H.y + 6 + i * 10, 9, 6); ctx.fillRect(ROAD_V.x + 6 + i * 10, ROAD_H.y - 34, 6, 9); ctx.fillRect(ROAD_V.x + 6 + i * 10, ROAD_H.y + ROAD_H.h + 25, 6, 9); }
+    // sidewalk plaza beneath each building's frontage
+    for (const b of BUILDINGS) { ctx.fillStyle = "#8f95a0"; ctx.fillRect(b.x - 6, b.y + b.h, b.w + 12, 30); }
+    BUSHES.forEach(p => drawBush(p[0], p[1]));
+    const near = nearBuilding();
+    for (const b of BUILDINGS) {
+        const hl = near === b;
+        ctx.fillStyle = hl ? "rgba(255,215,0,0.55)" : "rgba(60,63,71,0.9)"; ctx.fillRect(b.door.x, b.door.y, b.door.w, b.door.h);
+        ctx.fillStyle = "rgba(0,0,0,0.25)"; for (let i = 0; i < 3; i++) ctx.fillRect(b.door.x + 4 + i * 14, b.door.y + 4, 8, b.door.h - 8);
+        drawBuilding(b, hl);
+    }
+    CARS.forEach(drawCar);
+    TREES.forEach(p => drawTree(p[0], p[1]));
+    LIGHTS.forEach(p => drawLight(p[0], p[1]));
+    drawPlayer();
+}
+function drawHUD() {
+    ctx.fillStyle = "rgba(2,4,12,0.9)"; ctx.fillRect(0, 0, W, TOP);
+    ctx.fillStyle = "#ffd700"; ctx.font = "bold 15px Orbitron"; ctx.textAlign = "left"; ctx.fillText("◆ " + fmt(money), 12, 19);
+    ctx.fillStyle = "#9bd"; ctx.font = "10px Orbitron"; ctx.fillText("NET " + fmt(netWorth()), 12, 35);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 13px Orbitron"; ctx.textAlign = "center"; ctx.fillText(JOBS[jobLevel].title, W / 2, 18);
+    ctx.fillStyle = "#9bd"; ctx.font = "10px Orbitron"; ctx.fillText("DAY " + day + " · SKILL " + skill + " · +" + fmt(passivePerDay()) + "/day", W / 2, 34);
+    // energy bar
+    ctx.textAlign = "right"; ctx.fillStyle = "#9bd"; ctx.font = "9px Orbitron"; ctx.fillText("ENERGY", W - 12, 12);
+    ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.fillRect(W - 122, 16, 110, 8);
+    ctx.fillStyle = energy < 25 ? "#ff3355" : "#00ff88"; ctx.fillRect(W - 122, 16, 110 * Math.max(0, energy) / maxEnergy, 8);
+    // goal bar
+    ctx.fillStyle = "rgba(255,215,0,0.15)"; ctx.fillRect(W - 122, 28, 110, 6);
+    ctx.fillStyle = "#ffd700"; ctx.fillRect(W - 122, 28, 110 * Math.min(1, netWorth() / GOAL), 6);
+    ctx.textAlign = "left";
+    // bottom strip: prompt or message
+    ctx.fillStyle = "rgba(2,4,12,0.9)"; ctx.fillRect(0, H - BOT, W, BOT);
+    const b = state === "world" ? nearBuilding() : null;
+    ctx.textAlign = "center"; ctx.font = "bold 12px Orbitron";
+    if (b) { ctx.fillStyle = "#ffd700"; ctx.fillText(promptText(b), W / 2, H - 11); }
+    else { ctx.fillStyle = "#9bd"; ctx.font = "11px Orbitron"; ctx.fillText(lastMsg, W / 2, H - 11); }
+    ctx.textAlign = "left";
+}
+
+let last = 0;
+function loop(ts) {
+    const dt = Math.min((ts - last) / 1000, 0.05); last = ts;
+    if (state === "world") moveWorld(dt);
+    if (state === "work") {
+        needle += vel * dt; if (needle > 1) { needle = 1; vel *= -1; } if (needle < 0) { needle = 0; vel *= -1; }
+        drawMeter();
+    }
+    drawWorld(); drawHUD();
+    requestAnimationFrame(loop);
+}
+
+function start() { if (!AC) beep(440); reset(); state = "world"; $("menu").classList.remove("show"); $("win-overlay").classList.remove("show"); closeOverlays(); }
+
+$("work-btn").addEventListener("click", work);
+$("wo-leave").addEventListener("click", leaveBuilding);
+$("mk-leave").addEventListener("click", leaveBuilding);
+$("sh-leave").addEventListener("click", leaveBuilding);
+$("start-btn").addEventListener("click", start);
+$("win-btn").addEventListener("click", start);
+window.addEventListener("keydown", e => {
+    keys[e.key] = true;
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+    if (state === "world" && (e.key === "e" || e.key === "E")) interact();
+    else if (state === "work" && e.key === " ") work();
+    else if ((state === "work" || state === "market" || state === "shop") && e.key === "Escape") leaveBuilding();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+
+reset(); state = "menu";
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

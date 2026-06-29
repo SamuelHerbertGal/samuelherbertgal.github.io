@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lunar Lander</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px; box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.9); display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; border-radius: 6px; z-index: 5; padding: 22px; }
+    .panel.show { display: flex; }
+    h1 { font-size: 2.1rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    .sub { font-size: 0.78rem; opacity: 0.82; margin-bottom: 18px; line-height: 1.7; } .sub b { color: var(--neon-blue); }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue); border-radius: 10px; padding: 12px 36px; font-family: 'Orbitron'; font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: 0.2s; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 28px var(--neon-blue); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="640" height="520"></canvas>
+    <div id="menu" class="panel show"><h1>LUNAR LANDER</h1><p class="sub"><b>←/→</b> rotate · <b>↑/Space</b> thrust<br>Touch down gently &amp; upright on a flat pad. Watch your fuel.</p><button id="start">LAUNCH</button></div>
+    <div id="over" class="panel"><h1 id="ovt">LANDED</h1><p class="sub" id="ovs"></p><button id="retry">FLY AGAIN</button></div>
+</div>
+<script>
+const W = 640, H = 520;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+let ship, terrain, pads, stars, score, level, state = "menu", shake;
+const keys = {};
+let AC = null, thrustOsc = null;
+function ensureAudio() { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } }
+function beep(f, d = 0.1, t = "square", v = 0.12) { ensureAudio(); if (!AC) return; try { const o = AC.createOscillator(), g = AC.createGain(); o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d); o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {} }
+
+function genTerrain() {
+    terrain = []; pads = [];
+    let y = H - 80 - Math.random() * 60;
+    const padCount = Math.max(1, 3 - (level / 3 | 0));
+    const padXs = [];
+    for (let i = 0; i < padCount; i++) padXs.push(80 + Math.random() * (W - 200));
+    let x = 0;
+    while (x < W) {
+        const pad = padXs.find(px => Math.abs(px - x) < 30);
+        if (pad && !pads.some(p => Math.abs(p.x - x) < 90)) {
+            const pw = 70 - Math.min(40, level * 5), py = y;
+            pads.push({ x: x + pw / 2, y: py, w: pw, mult: pw < 45 ? 3 : pw < 60 ? 2 : 1 });
+            terrain.push([x, py], [x + pw, py]); x += pw;
+        } else { terrain.push([x, y]); y += (Math.random() - 0.5) * 80; y = Math.max(H - 220, Math.min(H - 30, y)); x += 24 + Math.random() * 24; }
+    }
+    terrain.push([W, y]);
+    stars = Array.from({ length: 60 }, () => ({ x: Math.random() * W, y: Math.random() * H * 0.7 }));
+}
+function reset(full) { if (full) { score = 0; level = 1; } genTerrain(); ship = { x: 80 + Math.random() * 80, y: 60, vx: 0.5 + Math.random(), vy: 0, a: 0, fuel: 100 + level * 0 + 120 }; shake = 0; }
+function groundYAt(x) {
+    for (let i = 0; i < terrain.length - 1; i++) { const [x1, y1] = terrain[i], [x2, y2] = terrain[i + 1]; if (x >= x1 && x <= x2) { const t = (x - x1) / (x2 - x1 || 1); return y1 + (y2 - y1) * t; } }
+    return H;
+}
+function update(dt) {
+    if (state !== "play") return;
+    if (shake > 0) shake -= dt * 30;
+    if (keys.ArrowLeft) ship.a -= 2.6 * dt; if (keys.ArrowRight) ship.a += 2.6 * dt;
+    const thrusting = (keys.ArrowUp || keys[" "]) && ship.fuel > 0;
+    if (thrusting) { ship.vx += Math.sin(ship.a) * 9 * dt; ship.vy -= Math.cos(ship.a) * 9 * dt; ship.fuel -= 22 * dt; }
+    ship.vy += 3.2 * dt;   // gravity
+    ship.x += ship.vx * 18 * dt; ship.y += ship.vy * 18 * dt;
+    if (ship.x < 0) ship.x = 0; if (ship.x > W) ship.x = W;
+    // collision with ground
+    const gy = groundYAt(ship.x);
+    if (ship.y + 12 >= gy) {
+        ship.y = gy - 12;
+        const pad = pads.find(p => Math.abs(ship.x - p.x) < p.w / 2 && Math.abs(p.y - gy) < 4);
+        const speed = Math.hypot(ship.vx, ship.vy), upright = Math.abs(((ship.a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) < 0.25 || Math.abs(ship.a % (Math.PI * 2)) > Math.PI * 2 - 0.25;
+        const angOk = Math.cos(ship.a) > 0.96;
+        if (pad && speed < 2.2 && angOk) { land(pad); } else { crash(); }
+    }
+}
+function land(pad) {
+    state = "over"; const gained = Math.round((100 + ship.fuel) * pad.mult);
+    score += gained; level++;
+    document.getElementById("ovt").textContent = "PERFECT LANDING! ×" + pad.mult; document.getElementById("ovt").style.color = "#00ff88";
+    document.getElementById("ovs").textContent = "+" + gained + " pts · total " + score + " · Continue?"; document.getElementById("over").classList.add("show");
+    beep(660, 0.15); beep(990, 0.18); nextIsContinue = true;
+}
+function crash() {
+    state = "over"; shake = 18;
+    document.getElementById("ovt").textContent = "CRASHED"; document.getElementById("ovt").style.color = "#ff3355";
+    document.getElementById("ovs").textContent = "Reached level " + level + " · score " + score; document.getElementById("over").classList.add("show");
+    beep(100, 0.5, "sawtooth", 0.22); nextIsContinue = false;
+}
+let nextIsContinue = false;
+function draw() {
+    const sx = shake > 0 ? (Math.random() - 0.5) * shake : 0, sy = shake > 0 ? (Math.random() - 0.5) * shake : 0;
+    ctx.setTransform(1, 0, 0, 1, sx, sy);
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#05060f"); g.addColorStop(1, "#0c0a1a"); ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+    if (stars) for (const s of stars) { ctx.fillStyle = "rgba(200,210,255,0.5)"; ctx.fillRect(s.x, s.y, 1.6, 1.6); }
+    // terrain
+    ctx.beginPath(); ctx.moveTo(0, H); ctx.lineTo(terrain[0][0], terrain[0][1]); for (const [x, y] of terrain) ctx.lineTo(x, y); ctx.lineTo(W, H); ctx.closePath();
+    ctx.fillStyle = "#1a2230"; ctx.fill(); ctx.strokeStyle = "#00f2ff"; ctx.lineWidth = 2; ctx.stroke();
+    // pads
+    for (const p of pads) { ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 4; ctx.shadowBlur = 10; ctx.shadowColor = "#ffd700"; ctx.beginPath(); ctx.moveTo(p.x - p.w / 2, p.y); ctx.lineTo(p.x + p.w / 2, p.y); ctx.stroke(); ctx.shadowBlur = 0; ctx.fillStyle = "#ffd700"; ctx.font = "10px Orbitron"; ctx.textAlign = "center"; ctx.fillText("×" + p.mult, p.x, p.y - 6); ctx.textAlign = "left"; }
+    // ship
+    if (ship) {
+        ctx.save(); ctx.translate(ship.x, ship.y); ctx.rotate(ship.a);
+        if ((keys.ArrowUp || keys[" "]) && ship.fuel > 0 && state === "play") { ctx.fillStyle = "#ff8c1a"; ctx.beginPath(); ctx.moveTo(-5, 10); ctx.lineTo(0, 18 + Math.random() * 10); ctx.lineTo(5, 10); ctx.fill(); }
+        ctx.fillStyle = "#cfe3ff"; ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(9, 8); ctx.lineTo(-9, 8); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = "#00f2ff"; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.strokeStyle = "#9bd"; ctx.beginPath(); ctx.moveTo(-7, 8); ctx.lineTo(-11, 14); ctx.moveTo(7, 8); ctx.lineTo(11, 14); ctx.stroke();
+        ctx.fillStyle = "#ffd700"; ctx.beginPath(); ctx.arc(0, -2, 3, 0, 7); ctx.fill();
+        ctx.restore();
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // HUD
+    if (ship) {
+        const speed = Math.hypot(ship.vx, ship.vy);
+        ctx.fillStyle = "#fff"; ctx.font = "bold 14px Orbitron"; ctx.fillText("SCORE " + score + "   LV " + level, 12, 22);
+        ctx.fillStyle = speed < 2.2 ? "#00ff88" : "#ff3355"; ctx.fillText("V " + speed.toFixed(1), 12, 42);
+        ctx.fillStyle = Math.cos(ship.a) > 0.96 ? "#00ff88" : "#ff3355"; ctx.fillText("∠ " + (Math.abs(((ship.a * 180 / Math.PI) % 360))).toFixed(0) + "°", 90, 42);
+        ctx.fillStyle = "#9bd"; ctx.font = "11px Orbitron"; ctx.fillText("FUEL", W - 120, 18);
+        ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.fillRect(W - 120, 22, 108, 10);
+        ctx.fillStyle = ship.fuel < 30 ? "#ff3355" : "#00ff88"; ctx.fillRect(W - 120, 22, 108 * Math.max(0, ship.fuel) / 220, 10);
+    }
+}
+let last = 0;
+function loop(ts) { const dt = Math.min((ts - last) / 1000, 0.04); last = ts; update(dt); draw(); requestAnimationFrame(loop); }
+function start() { ensureAudio(); reset(!nextIsContinue); if (!nextIsContinue) { score = 0; level = 1; reset(true); } state = "play"; document.getElementById("menu").classList.remove("show"); document.getElementById("over").classList.remove("show"); }
+window.addEventListener("keydown", e => { keys[e.key] = true; if (["ArrowUp", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault(); });
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+document.getElementById("start").onclick = () => { nextIsContinue = false; start(); };
+document.getElementById("retry").onclick = start;
+reset(true); loop();
+</script>
+</body>
+</html>

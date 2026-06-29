@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Reversi</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif;
+        display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px; box-shadow: 0 0 35px rgba(0,242,255,0.4); }
+    canvas { display: block; cursor: pointer; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.92); display: none; flex-direction: column;
+        align-items: center; justify-content: center; text-align: center; border-radius: 6px; z-index: 5; }
+    .panel.show { display: flex; }
+    h1 { font-size: 2.4rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 14px; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue); border-radius: 10px;
+        padding: 12px 36px; font-family: 'Orbitron'; font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: 0.2s; letter-spacing: 1px; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 28px var(--neon-blue); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="520" height="568"></canvas>
+    <div id="over" class="panel"><h1 id="ovt">YOU WIN</h1><button id="retry">REMATCH</button></div>
+</div>
+<script>
+const N = 8, S = 64, OFF = 4, TOPH = 48, W = 520, H = 568;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+const BLACK = 1, WHITE = 2, DIRS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+let bd, turn, busy;
+let AC = null; function beep(f, d = 0.06, v = 0.1) { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } } try { const o = AC.createOscillator(), g = AC.createGain(); o.type = "square"; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d); o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {} }
+
+function init() { bd = Array.from({ length: N }, () => Array(N).fill(0)); bd[3][3] = WHITE; bd[4][4] = WHITE; bd[3][4] = BLACK; bd[4][3] = BLACK; turn = BLACK; busy = false; document.getElementById("over").classList.remove("show"); draw(); }
+function flips(b, r, c, p) {
+    if (b[r][c]) return []; const out = []; const o = p === BLACK ? WHITE : BLACK;
+    for (const [dr, dc] of DIRS) { let rr = r + dr, cc = c + dc, line = []; while (rr >= 0 && cc >= 0 && rr < N && cc < N && b[rr][cc] === o) { line.push([rr, cc]); rr += dr; cc += dc; } if (line.length && rr >= 0 && cc >= 0 && rr < N && cc < N && b[rr][cc] === p) out.push(...line); }
+    return out;
+}
+function legal(b, p) { const m = []; for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (flips(b, r, c, p).length) m.push([r, c]); return m; }
+function play(r, c, p) { const f = flips(bd, r, c, p); if (!f.length) return false; bd[r][c] = p; for (const [rr, cc] of f) bd[rr][cc] = p; return true; }
+function count(p) { let n = 0; for (const row of bd) for (const v of row) if (v === p) n++; return n; }
+
+function humanMove(r, c) {
+    if (busy || turn !== BLACK) return;
+    if (!play(r, c, BLACK)) return; beep(520); draw();
+    next(WHITE);
+}
+function next(p) {
+    if (legal(bd, p).length === 0) { // pass
+        const other = p === BLACK ? WHITE : BLACK;
+        if (legal(bd, other).length === 0) return endGame();
+        turn = other; if (turn === WHITE) aiTurn(); return;
+    }
+    turn = p; draw(); if (p === WHITE) aiTurn();
+}
+function aiTurn() {
+    busy = true;
+    setTimeout(() => {
+        const mv = bestMove(); if (mv) { play(mv[0], mv[1], WHITE); beep(300); } draw();
+        busy = false; next(BLACK);
+    }, 380);
+}
+const WEIGHT = [[120, -20, 20, 5, 5, 20, -20, 120], [-20, -40, -5, -5, -5, -5, -40, -20], [20, -5, 15, 3, 3, 15, -5, 20], [5, -5, 3, 3, 3, 3, -5, 5], [5, -5, 3, 3, 3, 3, -5, 5], [20, -5, 15, 3, 3, 15, -5, 20], [-20, -40, -5, -5, -5, -5, -40, -20], [120, -20, 20, 5, 5, 20, -20, 120]];
+function bestMove() {
+    const ms = legal(bd, WHITE); if (!ms.length) return null;
+    let best = ms[0], bv = -1e9;
+    for (const [r, c] of ms) { let v = WEIGHT[r][c] + flips(bd, r, c, WHITE).length; if (v > bv) { bv = v; best = [r, c]; } }
+    return best;
+}
+function endGame() {
+    const b = count(BLACK), w = count(WHITE);
+    document.getElementById("ovt").textContent = b > w ? "YOU WIN " + b + "–" + w : b < w ? "CPU WINS " + w + "–" + b : "DRAW " + b + "–" + w;
+    document.getElementById("ovt").style.color = b >= w ? "#00ff88" : "#ff3355";
+    document.getElementById("over").classList.add("show"); beep(660, 0.2);
+}
+function draw() {
+    ctx.fillStyle = "#05060f"; ctx.fillRect(0, 0, W, H);
+    const b = count(BLACK), w = count(WHITE), ms = turn === BLACK ? legal(bd, BLACK) : [];
+    ctx.fillStyle = "#fff"; ctx.font = "bold 18px Orbitron"; ctx.textAlign = "left"; ctx.fillText("● YOU " + b, 12, 30);
+    ctx.textAlign = "right"; ctx.fillStyle = "#9bd"; ctx.fillText("CPU " + w + " ○", W - 12, 30);
+    ctx.textAlign = "center"; ctx.fillStyle = "#ffd700"; ctx.font = "12px Orbitron"; ctx.fillText(busy ? "CPU thinking…" : "Your move", W / 2, 30);
+    // board
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+        const x = OFF + c * S, y = TOPH + OFF + r * S;
+        ctx.fillStyle = "#16412a"; ctx.fillRect(x, y, S - 2, S - 2);
+        ctx.strokeStyle = "rgba(0,242,255,0.15)"; ctx.strokeRect(x + 0.5, y + 0.5, S - 2, S - 2);
+        if (bd[r][c]) { ctx.fillStyle = bd[r][c] === BLACK ? "#111820" : "#eef6ff"; ctx.shadowBlur = 8; ctx.shadowColor = bd[r][c] === BLACK ? "#000" : "#fff"; ctx.beginPath(); ctx.arc(x + S / 2 - 1, y + S / 2 - 1, S * 0.36, 0, 7); ctx.fill(); ctx.shadowBlur = 0; }
+    }
+    ctx.fillStyle = "rgba(255,215,0,0.5)";
+    for (const [r, c] of ms) { ctx.beginPath(); ctx.arc(OFF + c * S + S / 2 - 1, TOPH + OFF + r * S + S / 2 - 1, 6, 0, 7); ctx.fill(); }
+}
+canvas.addEventListener("click", e => {
+    const rect = canvas.getBoundingClientRect(), mx = (e.clientX - rect.left) * (W / rect.width), my = (e.clientY - rect.top) * (H / rect.height);
+    const c = (mx - OFF) / S | 0, r = (my - TOPH - OFF) / S | 0;
+    if (r >= 0 && c >= 0 && r < N && c < N) humanMove(r, c);
+});
+document.getElementById("retry").onclick = init;
+init();
+</script>
+</body>
+</html>

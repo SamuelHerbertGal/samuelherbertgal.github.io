@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Sudoku</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: radial-gradient(circle at 50% 15%, #14143a 0%, #05050f 70%); color: var(--neon-blue);
+        font-family: 'Orbitron', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px; }
+    h1 { font-size: 2rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 18px var(--neon-pink); margin-bottom: 6px; }
+    .bar { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; font-size: 0.8rem; color: #9bd; }
+    #grid { display: grid; grid-template-columns: repeat(9, 42px); grid-template-rows: repeat(9, 42px);
+        background: #0a0e1e; border: 3px solid var(--neon-blue); box-shadow: 0 0 26px rgba(0,242,255,0.3); }
+    .cell { display: flex; align-items: center; justify-content: center; font-size: 1.3rem; font-weight: 700; cursor: pointer;
+        border: 1px solid rgba(0,242,255,0.12); color: var(--neon-blue); transition: background .1s; }
+    .cell.given { color: #fff; }
+    .cell.sel { background: rgba(255,215,0,0.22); }
+    .cell.peer { background: rgba(0,242,255,0.06); }
+    .cell.same { background: rgba(0,255,136,0.14); }
+    .cell.bad { color: var(--red); }
+    .cell.br { border-right: 2px solid rgba(0,242,255,0.6); }
+    .cell.bb { border-bottom: 2px solid rgba(0,242,255,0.6); }
+    .pad { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 14px; width: 384px; }
+    button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue); border-radius: 8px;
+        padding: 10px; font-family: 'Orbitron'; font-size: 1rem; font-weight: 700; cursor: pointer; transition: 0.15s; }
+    button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 14px var(--neon-blue); }
+    .ctrls { display: flex; gap: 8px; margin-top: 10px; }
+    .ctrls button { font-size: 0.72rem; padding: 9px 14px; }
+    #msg { margin-top: 12px; height: 22px; font-weight: 700; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+<h1>SUDOKU</h1>
+<div class="bar">Mistakes <span id="mistakes">0</span> · <span id="diff">Medium</span></div>
+<div id="grid"></div>
+<div class="pad" id="pad"></div>
+<div class="ctrls">
+    <button data-d="40">Easy</button><button data-d="48">Medium</button><button data-d="54">Hard</button>
+    <button id="erase">Erase</button>
+</div>
+<div id="msg"></div>
+
+<script>
+const gridEl = document.getElementById("grid");
+let solution, puzzle, given, sel = -1, mistakes = 0, removeN = 48;
+
+function emptyGrid() { return Array.from({ length: 9 }, () => Array(9).fill(0)); }
+function valid(g, r, c, n) {
+    for (let i = 0; i < 9; i++) if (g[r][i] === n || g[i][c] === n) return false;
+    const br = r - r % 3, bc = c - c % 3;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) if (g[br + i][bc + j] === n) return false;
+    return true;
+}
+function solve(g) {
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (!g[r][c]) {
+        const nums = [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - 0.5);
+        for (const n of nums) if (valid(g, r, c, n)) { g[r][c] = n; if (solve(g)) return true; g[r][c] = 0; }
+        return false;
+    }
+    return true;
+}
+function newGame() {
+    solution = emptyGrid(); solve(solution);
+    puzzle = solution.map(r => r.slice()); given = Array.from({ length: 9 }, () => Array(9).fill(false));
+    let removed = 0, tries = 0;
+    while (removed < removeN && tries < 400) { const r = Math.random() * 9 | 0, c = Math.random() * 9 | 0; if (puzzle[r][c]) { puzzle[r][c] = 0; removed++; } tries++; }
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) given[r][c] = puzzle[r][c] !== 0;
+    mistakes = 0; sel = -1; document.getElementById("msg").textContent = ""; render();
+}
+function place(n) {
+    if (sel < 0) return; const r = sel / 9 | 0, c = sel % 9;
+    if (given[r][c]) return;
+    if (n === 0) { puzzle[r][c] = 0; render(); return; }
+    puzzle[r][c] = n;
+    if (n !== solution[r][c]) { mistakes++; }
+    render(); checkWin();
+}
+function checkWin() {
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (puzzle[r][c] !== solution[r][c]) return;
+    document.getElementById("msg").textContent = "✓ SOLVED!"; document.getElementById("msg").style.color = "#00ff88";
+}
+function render() {
+    gridEl.innerHTML = ""; document.getElementById("mistakes").textContent = mistakes;
+    const sr = sel >= 0 ? sel / 9 | 0 : -1, sc = sel >= 0 ? sel % 9 : -1, sv = sel >= 0 ? puzzle[sr][sc] : 0;
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
+        const i = r * 9 + c, v = puzzle[r][c], d = document.createElement("div");
+        d.className = "cell" + (given[r][c] ? " given" : "") + (c % 3 === 2 && c < 8 ? " br" : "") + (r % 3 === 2 && r < 8 ? " bb" : "");
+        if (i === sel) d.classList.add("sel");
+        else if (sel >= 0 && (r === sr || c === sc || (r - r % 3 === sr - sr % 3 && c - c % 3 === sc - sc % 3))) d.classList.add("peer");
+        if (v && v === sv && i !== sel) d.classList.add("same");
+        if (v && !given[r][c] && v !== solution[r][c]) d.classList.add("bad");
+        d.textContent = v || "";
+        d.onclick = () => { sel = i; render(); };
+        gridEl.appendChild(d);
+    }
+}
+const pad = document.getElementById("pad");
+for (let n = 1; n <= 9; n++) { const b = document.createElement("button"); b.textContent = n; b.onclick = () => place(n); pad.appendChild(b); }
+document.getElementById("erase").onclick = () => place(0);
+document.querySelectorAll("[data-d]").forEach(b => b.onclick = () => { removeN = +b.dataset.d; document.getElementById("diff").textContent = b.textContent; newGame(); });
+window.addEventListener("keydown", e => {
+    if (e.key >= "1" && e.key <= "9") place(+e.key);
+    else if (e.key === "0" || e.key === "Backspace" || e.key === "Delete") place(0);
+    else if (sel >= 0) { let r = sel / 9 | 0, c = sel % 9; if (e.key === "ArrowUp") r = (r + 8) % 9; else if (e.key === "ArrowDown") r = (r + 1) % 9; else if (e.key === "ArrowLeft") c = (c + 8) % 9; else if (e.key === "ArrowRight") c = (c + 1) % 9; else return; sel = r * 9 + c; render(); }
+});
+newGame();
+</script>
+</body>
+</html>
