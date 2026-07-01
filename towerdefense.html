@@ -88,7 +88,7 @@
     <div id="menu" class="panel">
         <h1>NEON DEFENSE</h1>
         <p class="sub">Nine weapons. Thirty waves. Ten kinds of horror.</p>
-        <p class="keys">Pick a weapon, <b>click a tile</b> to build. Click a placed tower to <b>upgrade</b>, change its <b>target priority</b>, or <b>sell</b> it. Build <b>Banks</b> for income. Trigger <b>Airstrike</b> / <b>Freeze</b> in a pinch. Use <b>fast-forward</b> to speed things up. Bosses arrive at waves 10, 20, and 30.</p>
+        <p class="keys">Pick a weapon, <b>click a tile</b> to build. Click a placed tower to <b>upgrade</b>, change its <b>target priority</b>, or <b>sell</b> it. Build <b>Banks</b> for income. Trigger <b>Airstrike</b> / <b>Freeze</b> in a pinch. Use <b>fast-forward</b> to speed things up. <b>Hit "Wave" as often as you like — even mid-wave — to stack waves</b> and rush the payouts. Bosses hit every 5th wave, mega-bosses every 20th.</p>
         <button class="big" id="start-btn">DEFEND</button>
     </div>
     <div id="over" class="panel hidden">
@@ -166,28 +166,28 @@ function baseEnemy(type) {
     }[type];
 }
 
-let gold, lives, wave, kills, towers, enemies, projs, parts, effects, floats, spawnQ, spawnT, waveActive,
+let gold, lives, wave, kills, towers, enemies, projs, parts, effects, floats, spawners,
     selType, selTower, hoverC, hoverR, timeScale, airCd, freezeCd, nukeCd, repairCd, state = "menu";
 let bestWave = parseInt(localStorage.getItem("neonDefenseBest") || "0", 10);
 
 function reset() {
     gold = 220; lives = 25; wave = 0; kills = 0;
     towers = []; enemies = []; projs = []; parts = []; effects = []; floats = [];
-    spawnQ = []; spawnT = 0; waveActive = false; selType = null; selTower = null;
+    spawners = []; selType = null; selTower = null;
     hoverC = -1; hoverR = -1; timeScale = 1; airCd = 0; freezeCd = 0; nukeCd = 0; repairCd = 0;
     document.getElementById("speed-btn").textContent = "1x";
     hideInfo(); updateButtons();
 }
 
 // ---- wave generation (endless) ----
-function isBossWave(n) { return n % 10 === 0; }
+function isBossWave(n) { return n % 5 === 0; }
 function buildWave(n) {
     const q = [];
     const add = (type, count, gap) => { for (let i = 0; i < Math.max(0, Math.round(count)); i++) q.push({ type, gap }); };
     if (isBossWave(n)) {
         add("tank", 2 + n / 8, 0.7); add("armored", 3 + n / 12, 0.55); add("flying", 3 + n / 12, 0.45);
         add("shield", 2 + n / 15, 0.7); add("healer", 1 + n / 20, 1.0);
-        if (n % 30 === 0) { for (let b = 0; b < 1 + (n / 30 | 0); b++) q.push({ type: "megaboss", gap: 3 }); }
+        if (n % 20 === 0) { for (let b = 0; b < 1 + (n / 40 | 0); b++) q.push({ type: "megaboss", gap: 3 }); }
         const bosses = Math.max(1, n / 10 | 0);
         for (let b = 0; b < bosses; b++) q.push({ type: "boss", gap: 2.2 });
         return q;
@@ -209,17 +209,24 @@ function buildWave(n) {
 }
 
 function startWave() {
-    if (waveActive || state !== "playing") return;
-    wave++; spawnQ = buildWave(wave); spawnT = 0.3; waveActive = true;
-    if (wave % 30 === 0) addFloat(W / 2, 60, "☠ MEGA-BOSS ☠", "#ff0066");
+    if (state !== "playing") return;
+    wave++; spawners.push({ wave, q: buildWave(wave), t: 0.3 });
+    if (wave % 20 === 0) addFloat(W / 2, 60, "☠ MEGA-BOSS ☠", "#ff0066");
     else if (isBossWave(wave)) addFloat(W / 2, 60, "⚠ BOSS WAVE ⚠", "#ff2266");
     updateButtons(); beep(280, 0.14);
 }
+function finishWave(w) {   // reward once a wave has released all of its enemies
+    let inc = 0; for (const t of towers) if (TOWERS[t.type].income) inc += TOWERS[t.type].income * t.lvl;
+    const interest = Math.min(120, Math.floor(gold * 0.08));
+    const bonus = 45 + w * 6 + inc + interest;
+    gold += bonus; addFloat(W / 2, H / 2, "+" + bonus + " ◆", "#ffd700");
+    beep(660, 0.15); beep(880, 0.15); updateButtons();
+}
 
-function spawnAt(type, seg, t) {
-    const b = baseEnemy(type), S = 1 + wave * 0.16;
-    const e = Object.assign({}, b, { type, seg, t, x: 0, y: 0, slow: 0, poison: null, flash: 0, dead: false, healCd: b.healEvery || 0, shieldRegenT: 0 });
-    e.hp = Math.round(b.hp * (b.boss ? 1 + wave * 0.45 : S)); e.max = e.hp;
+function spawnAt(type, seg, t, w = wave) {
+    const b = baseEnemy(type), S = 1 + w * 0.16;
+    const e = Object.assign({}, b, { type, seg, t, wave: w, x: 0, y: 0, slow: 0, poison: null, flash: 0, dead: false, healCd: b.healEvery || 0, shieldRegenT: 0 });
+    e.hp = Math.round(b.hp * (b.boss ? 1 + w * 0.45 : S)); e.max = e.hp;
     if (b.shield) { e.shield = Math.round(b.shield * S); e.maxShield = e.shield; }
     const a = pathPts[seg], bb = pathPts[seg + 1];
     e.x = a.x + (bb.x - a.x) * t; e.y = a.y + (bb.y - a.y) * t;
@@ -257,7 +264,7 @@ function killEnemy(e) {
     gold += e.reward; kills++;
     burst(e.x, e.y, e.col, e.boss ? 40 : 12);
     if (e.boss) { for (let i = 0; i < 25; i++) burst(e.x + (Math.random() - 0.5) * 50, e.y + (Math.random() - 0.5) * 50, "#ff8c00", 2); beep(120, 0.5, "sawtooth", 0.2); }
-    if (e.split) for (let i = 0; i < e.split; i++) spawnAt("splitling", e.seg, clamp(e.t - 0.01 * i, 0, 0.99));
+    if (e.split) for (let i = 0; i < e.split; i++) spawnAt("splitling", e.seg, clamp(e.t - 0.01 * i, 0, 0.99), e.wave);
     updateButtons();
 }
 function burst(x, y, col, n) { for (let i = 0; i < n; i++) { const a = Math.random() * PI2, s = Math.random() * 130 + 30; parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5, max: 0.5, col }); } }
@@ -321,8 +328,13 @@ function fireTower(t, dt) {
 // ---- update ----
 function update(dt) {
     if (airCd > 0) airCd -= dt; if (freezeCd > 0) freezeCd -= dt; if (nukeCd > 0) nukeCd -= dt; if (repairCd > 0) repairCd -= dt;
-    // spawn
-    if (waveActive && spawnQ.length) { spawnT -= dt; if (spawnT <= 0) { const it = spawnQ.shift(); spawnAt(it.type, 0, 0); spawnT = it.gap; } }
+    // spawn — several waves can release enemies at the same time
+    for (let i = spawners.length - 1; i >= 0; i--) {
+        const s = spawners[i];
+        s.t -= dt;
+        if (s.t <= 0 && s.q.length) { const it = s.q.shift(); spawnAt(it.type, 0, 0, s.wave); s.t = it.gap; }
+        if (s.q.length === 0) { finishWave(s.wave); spawners.splice(i, 1); }
+    }
     // enemies
     for (const e of enemies) {
         if (e.dead) continue;
@@ -371,16 +383,6 @@ function update(dt) {
     for (let i = floats.length - 1; i >= 0; i--) { floats[i].life -= dt; floats[i].y -= dt * 18; if (floats[i].life <= 0) floats.splice(i, 1); }
     // cull dead
     if (enemies.some(e => e.dead)) enemies = enemies.filter(e => !e.dead);
-    // wave end
-    if (waveActive && spawnQ.length === 0 && enemies.length === 0) {
-        waveActive = false;
-        let inc = 0; for (const t of towers) if (TOWERS[t.type].income) inc += TOWERS[t.type].income * t.lvl;
-        const interest = Math.min(120, Math.floor(gold * 0.08));
-        const bonus = 45 + wave * 6 + inc + interest;
-        gold += bonus; addFloat(W / 2, H / 2, "+" + bonus + " ◆", "#ffd700");
-        beep(660, 0.15); beep(880, 0.15);
-        updateButtons();
-    }
 }
 
 // ---- abilities ----
@@ -468,8 +470,9 @@ function showInfo() {
 function hideInfo() { document.getElementById("tinfo").classList.add("hidden"); }
 
 function updateButtons() {
-    document.getElementById("wave-btn").disabled = waveActive;
-    document.getElementById("wave-btn").textContent = waveActive ? "Wave " + wave + "…" : "▶ Wave " + (wave + 1) + (((wave + 1) % 30 === 0) ? " ☠" : isBossWave(wave + 1) ? " ⚠" : "");
+    const nx = wave + 1, mark = (nx % 20 === 0) ? " ☠" : isBossWave(nx) ? " ⚠" : "";
+    document.getElementById("wave-btn").disabled = state !== "playing";
+    document.getElementById("wave-btn").textContent = "▶ Wave " + nx + mark + (spawners.length ? " (+" + spawners.length + " live)" : "");
     document.querySelectorAll(".tbtn").forEach(b => { const spec = TOWERS[b.dataset.t]; b.classList.toggle("poor", gold < spec.cost); b.classList.toggle("sel", selType === b.dataset.t); });
     document.getElementById("air-btn").disabled = gold < 150 || airCd > 0;
     document.getElementById("freeze-btn").disabled = gold < 100 || freezeCd > 0;
@@ -621,7 +624,7 @@ document.getElementById("sell-btn").addEventListener("click", sellSel);
 document.getElementById("start-btn").addEventListener("click", start);
 document.getElementById("retry-btn").addEventListener("click", start);
 window.addEventListener("keydown", e => {
-    if (e.key === " ") { e.preventDefault(); if (!waveActive) startWave(); }
+    if (e.key === " ") { e.preventDefault(); startWave(); }
     else if (e.key === "Escape") { selType = null; selTower = null; hideInfo(); updateButtons(); }
 });
 

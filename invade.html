@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Warpath: Invasion Tactics</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+    :root { --neon-blue: #00f2ff; --neon-pink: #ff00ff; --gold: #ffd700; --green: #00ff88; --red: #ff3355; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; color: var(--neon-blue); font-family: 'Orbitron', sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
+    #frame { position: relative; border: 3px solid var(--neon-blue); border-radius: 8px; box-shadow: 0 0 35px rgba(0,242,255,0.4); background: #05060f; }
+    canvas { display: block; cursor: pointer; }
+    #controls { display: flex; gap: 5px; padding: 7px; align-items: center; justify-content: center; flex-wrap: wrap; border-top: 1px solid rgba(0,242,255,0.25); min-height: 52px; }
+    .ubtn { background: rgba(0,242,255,0.06); color: #cfe; border: 1.5px solid rgba(0,242,255,0.35); border-radius: 7px; padding: 5px 7px; font-family: 'Orbitron'; font-size: 0.56rem; font-weight: 700; cursor: pointer; text-transform: uppercase; transition: 0.12s; text-align: center; min-width: 54px; }
+    .ubtn .ic { font-size: 0.95rem; display: block; } .ubtn .cost { color: var(--gold); }
+    .ubtn:hover { background: rgba(0,242,255,0.16); } .ubtn.sel { background: var(--neon-blue); color: #000; box-shadow: 0 0 12px var(--neon-blue); } .ubtn.sel .cost { color: #042; }
+    .act { background: transparent; border-radius: 8px; padding: 8px 14px; font-family: 'Orbitron'; font-size: 0.72rem; font-weight: 700; cursor: pointer; letter-spacing: 1px; transition: 0.12s; }
+    .go { color: var(--green); border: 2px solid var(--green); } .go:hover:not(:disabled) { background: var(--green); color: #000; box-shadow: 0 0 16px var(--green); } .go:disabled { opacity: 0.4; cursor: default; }
+    .yl { color: var(--gold); border: 2px solid var(--gold); } .yl:hover:not(:disabled) { background: var(--gold); color: #000; box-shadow: 0 0 16px var(--gold); } .yl:disabled { opacity: 0.4; cursor: default; }
+    .bl { color: var(--neon-blue); border: 2px solid var(--neon-blue); } .bl:hover { background: var(--neon-blue); color: #000; }
+    .gold { color: var(--gold); font-size: 0.82rem; margin-left: 6px; font-weight: 700; }
+    .panel { position: absolute; inset: 0; background: rgba(2,2,12,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; border-radius: 6px; z-index: 8; padding: 22px; overflow-y: auto; }
+    .panel.show { display: flex; }
+    h1 { font-size: 2.1rem; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 0 22px var(--neon-pink); margin-bottom: 6px; }
+    h2 { font-size: 0.85rem; color: var(--gold); letter-spacing: 2px; margin: 12px 0 5px; }
+    .sub { font-size: 0.74rem; opacity: 0.85; margin-bottom: 12px; line-height: 1.6; max-width: 520px; } .sub b { color: var(--neon-blue); }
+    .help { text-align: left; max-width: 540px; font-size: 0.68rem; line-height: 1.6; color: #bcd; }
+    .help b { color: #fff; } .help .u { color: var(--gold); }
+    .help table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+    .help td { padding: 2px 6px; border-bottom: 1px solid rgba(0,242,255,0.1); }
+    .big { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue); border-radius: 10px; padding: 11px 32px; font-family: 'Orbitron'; font-size: 1rem; font-weight: 700; cursor: pointer; transition: 0.2s; letter-spacing: 1px; margin-top: 14px; }
+    .big:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 28px var(--neon-blue); }
+</style>
+</head>
+<body>
+<div id="frame">
+    <canvas id="c" width="616" height="484"></canvas>
+    <div id="controls"></div>
+
+    <div id="menu" class="panel show">
+        <h1>WARPATH</h1>
+        <p class="sub">A turn-based invasion. Out-think and overrun the enemy army holding the east.</p>
+        <div class="help">
+            <h2>OBJECTIVE</h2>
+            Win by <b>capturing the enemy HQ ⌂</b> (move Infantry/Recon onto it) or <b>destroying their whole army</b>. You lose if your army is wiped out or the enemy seizes your HQ.
+            <h2>HOW TO PLAY</h2>
+            <b>1. Deploy</b> — spend your budget to build a force in the west zone (left 3 columns). Click a unit, click a tile. Click a placed unit to refund it.<br>
+            <b>2. Battle</b> — click a unit → blue = move range, red = targets. Click a tile to move, then click an enemy to attack. <b>END TURN</b> when done.<br>
+            <b>3. Reinforce</b> — earn gold each turn from your HQ &amp; captured cities. Hit <b>BUILD</b> to spend it on new units next to your HQ.
+            <h2>TIPS</h2>
+            Capture neutral <b>cities ▣</b> for income &amp; healing · units on your buildings heal each turn · forests/mountains reduce incoming damage · ranged units (Artillery) avoid counterattacks · kills earn <b>veterancy ★</b> for bonus damage.
+        </div>
+        <button class="big" id="start">PLAN INVASION</button>
+    </div>
+
+    <div id="help" class="panel">
+        <h1>FIELD MANUAL</h1>
+        <div class="help">
+            <h2>CONTROLS</h2>
+            Click your unit → click blue tile to move → click red enemy to attack. <b>END TURN</b> passes to the enemy. <b>BUILD</b> deploys reinforcements by your HQ. Press <b>H</b> to toggle this manual.
+            <h2>UNITS (rock-paper-scissors)</h2>
+            <table>
+            <tr><td>🪖 <span class="u">Infantry</span></td><td>cheap, captures HQ/cities</td></tr>
+            <tr><td>🏍️ <span class="u">Recon</span></td><td>fast scout, captures</td></tr>
+            <tr><td>🛡️ <span class="u">Tank</span></td><td>crushes infantry, weak to anti-tank</td></tr>
+            <tr><td>💥 <span class="u">Artillery</span></td><td>range 2–3, no counterattack, fragile</td></tr>
+            <tr><td>🎯 <span class="u">Anti-Tank</span></td><td>shreds tanks &amp; helicopters</td></tr>
+            <tr><td>🚁 <span class="u">Helicopter</span></td><td>flies over water/mountains, fast</td></tr>
+            <tr><td>➕ <span class="u">Medic</span></td><td>heals an adjacent ally instead of attacking</td></tr>
+            </table>
+            <h2>TERRAIN</h2>
+            ▣ City (capture for income/heal) · 🌲 Forest (−30% dmg) · ⛰ Mountain (blocks ground, −40% dmg) · ≋ Water (blocks ground; helicopters fly over) · ⌂ HQ (heals, capture to win)
+        </div>
+        <button class="big" id="help-close">BACK</button>
+    </div>
+
+    <div id="over" class="panel"><h1 id="ovt">VICTORY</h1><p class="sub" id="ovs"></p><button class="big" id="retry">NEW BATTLE</button></div>
+</div>
+<script>
+const COLS = 14, ROWS = 10, T = 44, TOP = 44, W = COLS * T, H = ROWS * T + TOP;
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+let AC = null; function beep(f, d = 0.06, t = "square", v = 0.08) { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } } try { const o = AC.createOscillator(), g = AC.createGain(); o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, AC.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d); o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {} }
+
+// terrain: 0 plains,1 forest,2 mountain,3 water,4 pHQ,5 eHQ,6 city
+let terrain, owner;
+const BLOCK = t => t === 2 || t === 3;
+const TCOST = t => t === 1 ? 2 : 1;
+const TDEF = { 0: 0, 1: 0.3, 2: 0.4, 3: 0, 4: 0.2, 5: 0.2, 6: 0.25 };
+const UNITS = {
+    inf: { name: "Infantry", ic: "🪖", cost: 100, hp: 10, move: 3, rng: [1, 1], atk: 5, cap: true },
+    recon: { name: "Recon", ic: "🏍️", cost: 140, hp: 10, move: 6, rng: [1, 1], atk: 4, cap: true },
+    tank: { name: "Tank", ic: "🛡️", cost: 320, hp: 10, move: 4, rng: [1, 1], atk: 8 },
+    arty: { name: "Artillery", ic: "💥", cost: 260, hp: 10, move: 2, rng: [2, 3], atk: 9, noCounter: true },
+    at: { name: "Anti-Tank", ic: "🎯", cost: 200, hp: 10, move: 3, rng: [1, 1], atk: 6 },
+    heli: { name: "Helicopter", ic: "🚁", cost: 300, hp: 10, move: 6, rng: [1, 1], atk: 7, fly: true },
+    medic: { name: "Medic", ic: "➕", cost: 160, hp: 10, move: 4, rng: [1, 1], atk: 0, heal: 5, cap: true },
+};
+const MAT = {
+    inf: { inf: 1, recon: 1, tank: .4, arty: 1.1, at: 1, heli: .7, medic: 1.1 },
+    recon: { inf: 1, recon: 1, tank: .4, arty: 1.2, at: 1, heli: .7, medic: 1.2 },
+    tank: { inf: 1.5, recon: 1.6, tank: 1, arty: 1.4, at: 1.3, heli: .3, medic: 1.5 },
+    arty: { inf: 1.5, recon: 1.4, tank: 1.2, arty: 1.2, at: 1.3, heli: .3, medic: 1.5 },
+    at: { inf: .7, recon: .8, tank: 1.7, arty: 1.2, at: 1, heli: 1.7, medic: .8 },
+    heli: { inf: 1.2, recon: 1.3, tank: 1.3, arty: 1.4, at: .8, heli: 1, medic: 1.4 },
+};
+let units, phase, budget, gold, eGold, selType, sel, moveSet, moved, turnNo, msg, buildMode;
+const key = (r, c) => r * COLS + c;
+
+function buildMap() {
+    terrain = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    owner = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    for (let r = 0; r < ROWS; r++) terrain[r][7] = 3;
+    terrain[2][7] = 0; terrain[7][7] = 0;
+    [[1, 4], [3, 4], [6, 3], [8, 5], [2, 10], [7, 11], [3, 9]].forEach(([r, c]) => terrain[r][c] = 1);
+    [[0, 9], [9, 9], [4, 6], [5, 6]].forEach(([r, c]) => terrain[r][c] = 2);
+    terrain[5][1] = 4; owner[5][1] = "player";
+    terrain[4][12] = 5; owner[4][12] = "enemy";
+    [[0, 5], [9, 5], [4, 4], [5, 9]].forEach(([r, c]) => { terrain[r][c] = 6; owner[r][c] = "none"; });
+    owner[5][9] = "enemy";   // enemy starts holding the eastern city
+}
+function newBattle() {
+    buildMap();
+    units = [
+        mk("enemy", "tank", 4, 11), mk("enemy", "inf", 3, 12), mk("enemy", "inf", 6, 12),
+        mk("enemy", "arty", 4, 13), mk("enemy", "recon", 6, 10), mk("enemy", "at", 5, 11), mk("enemy", "heli", 2, 11),
+    ];
+    budget = 1100; gold = 200; eGold = 200; selType = "inf"; sel = null; moveSet = null; moved = false; turnNo = 1;
+    phase = "deploy"; buildMode = false; msg = "Deploy in the west (left 3 columns), then START.";
+    buildControls();
+}
+function mk(team, type, r, c) { return { team, type, r, c, hp: UNITS[type].hp, acted: false, vet: 0 }; }
+function unitAt(r, c) { return units.find(u => u.r === r && u.c === c && u.hp > 0); }
+function hqPos(team) { for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (terrain[r][c] === (team === "player" ? 4 : 5)) return [r, c]; }
+function citiesOwned(team) { let n = 0; for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (terrain[r][c] === 6 && owner[r][c] === team) n++; return n; }
+
+// ---- movement ----
+function reachable(u) {
+    const fly = UNITS[u.type].fly, dist = {}; dist[key(u.r, u.c)] = 0; const pq = [[0, u.r, u.c]];
+    while (pq.length) {
+        pq.sort((a, b) => a[0] - b[0]); const [d, r, c] = pq.shift(); if (d > dist[key(r, c)]) continue;
+        for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nr = r + dr, nc = c + dc; if (nr < 0 || nc < 0 || nr >= ROWS || nc >= COLS) continue;
+            if (!fly && BLOCK(terrain[nr][nc])) continue; const occ = unitAt(nr, nc); if (occ && occ.team !== u.team) continue;
+            const nd = d + (fly ? 1 : TCOST(terrain[nr][nc]));
+            if (nd <= u.move && (dist[key(nr, nc)] === undefined || nd < dist[key(nr, nc)])) { dist[key(nr, nc)] = nd; pq.push([nd, nr, nc]); }
+        }
+    }
+    const stops = new Set();
+    for (const k in dist) { const r = k / COLS | 0, c = k % COLS, occ = unitAt(r, c); if (!occ || occ === u) stops.add(+k); }
+    return stops;
+}
+function targetsFrom(u, r, c) {
+    const out = [];
+    if (u.type === "medic") { for (const f of units) { if (f.team !== u.team || f.hp <= 0 || f === u) continue; if (Math.abs(f.r - r) + Math.abs(f.c - c) === 1 && f.hp < UNITS[f.type].hp) out.push(f); } return out; }
+    for (const e of units) { if (e.team === u.team || e.hp <= 0) continue; const d = Math.abs(e.r - r) + Math.abs(e.c - c); if (d >= u.rng[0] && d <= u.rng[1]) out.push(e); }
+    return out;
+}
+function dmgVal(att, def, ar, ac) { return Math.max(1, Math.round(UNITS[att.type].atk * (att.hp / 10) * MAT[att.type][def.type] * (1 + att.vet * 0.1) * (1 - TDEF[terrain[def.r][def.c]]))); }
+function resolve(att, def, r, c) {
+    def.hp -= dmgVal(att, def, r, c); beep(att.type === "arty" || att.type === "tank" ? 180 : 420, 0.07);
+    if (def.hp <= 0) { def.hp = 0; att.vet = Math.min(3, att.vet + 1); return; }
+    const dist = Math.abs(def.r - r) + Math.abs(def.c - c), du = UNITS[def.type];
+    if (!du.noCounter && du.atk > 0 && dist >= du.rng[0] && dist <= du.rng[1] && att.hp > 0) { att.hp -= dmgVal(def, att, def.r, def.c); if (att.hp < 0) att.hp = 0; if (att.hp === 0) def.vet = Math.min(3, def.vet + 1); }
+}
+
+// ---- player interaction ----
+function clickTile(r, c) {
+    if (r < 0 || c < 0 || r >= ROWS || c >= COLS) return;
+    if (phase === "deploy") {
+        const occ = unitAt(r, c);
+        if (occ && occ.team === "player") { budget += UNITS[occ.type].cost; units = units.filter(u => u !== occ); beep(300); buildControls(); return; }
+        if (c > 2 || BLOCK(terrain[r][c]) || terrain[r][c] === 4 || occ) return;
+        if (budget < UNITS[selType].cost) { beep(150, 0.1); return; }
+        budget -= UNITS[selType].cost; units.push(mk("player", selType, r, c)); beep(520); buildControls(); return;
+    }
+    if (phase !== "play") return;
+    if (buildMode) { tryBuild(r, c); return; }
+    const occ = unitAt(r, c);
+    if (!sel) { if (occ && occ.team === "player" && !occ.acted) { sel = occ; moved = false; moveSet = reachable(occ); } return; }
+    if (!moved) {
+        if (occ === sel) { finishUnit(); return; }
+        if (occ && occ.team === "player" && !occ.acted) { sel = occ; moveSet = reachable(occ); return; }
+        if (moveSet.has(key(r, c)) && !occ) { sel.r = r; sel.c = c; moved = true; if (capture(sel)) return; if (targetsFrom(sel, r, c).length === 0) finishUnit(); return; }
+        sel = null; moveSet = null; return;
+    } else {
+        const tg = targetsFrom(sel, sel.r, sel.c);
+        if (occ && tg.includes(occ)) {
+            if (sel.type === "medic") { occ.hp = Math.min(UNITS[occ.type].hp, occ.hp + UNITS.medic.heal); beep(880, 0.1); }
+            else { resolve(sel, occ, sel.r, sel.c); cull(); checkWin(); }
+            finishUnit(); return;
+        }
+        finishUnit(); return;
+    }
+}
+function capture(u) {
+    const t = terrain[u.r][u.c];
+    if (!UNITS[u.type].cap) return false;
+    if (t === 5) { win("ENEMY HQ CAPTURED"); return true; }
+    if (t === 6 && owner[u.r][u.c] !== "player") { owner[u.r][u.c] = "player"; msg = "City captured! +income"; beep(700, 0.1); }
+    return false;
+}
+function finishUnit() { if (sel) sel.acted = true; sel = null; moveSet = null; moved = false; }
+function cull() { units = units.filter(u => u.hp > 0); }
+
+function tryBuild(r, c) {
+    const [hr, hc] = hqPos("player");
+    if (Math.max(Math.abs(r - hr), Math.abs(c - hc)) > 1) { return; }
+    if (BLOCK(terrain[r][c]) || unitAt(r, c)) { beep(150, 0.1); return; }
+    if (gold < UNITS[selType].cost) { beep(150, 0.1); return; }
+    gold -= UNITS[selType].cost; const u = mk("player", selType, r, c); u.acted = true; units.push(u); beep(520); buildControls();
+}
+
+function startInvasion() { if (!units.some(u => u.team === "player")) return; phase = "play"; turnNo = 1; beginPlayerTurn(); buildControls(); }
+function sideUpkeep(team) {
+    if (team === "player") gold += 100 + 80 * citiesOwned("player"); else eGold += 100 + 80 * citiesOwned("enemy");
+    for (const u of units) { if (u.team !== team || u.hp <= 0) continue; const t = terrain[u.r][u.c]; const own = owner[u.r][u.c]; if ((t === 4 || t === 5 || t === 6) && own === team) u.hp = Math.min(UNITS[u.type].hp, u.hp + 3); }
+}
+function beginPlayerTurn() { units.forEach(u => { if (u.team === "player") u.acted = false; }); sideUpkeep("player"); msg = "Your turn — move, attack, BUILD."; }
+function endTurn() { if (phase !== "play") return; sel = null; moveSet = null; buildMode = false; phase = "enemy"; msg = "Enemy maneuvering…"; buildControls(); setTimeout(enemyTurn, 350); }
+
+// ---- enemy AI ----
+function enemyTurn() {
+    sideUpkeep("enemy"); enemyBuild();
+    const list = units.filter(u => u.team === "enemy" && u.hp > 0); let i = 0;
+    const step = () => {
+        if (i >= list.length) {
+            cull();
+            const eh = hqPos("enemy");
+            if (units.find(u => u.team === "enemy" && UNITS[u.type].cap && terrain[u.r][u.c] === 4)) return lose("YOUR HQ FELL");
+            if (!units.some(u => u.team === "player" && u.hp > 0)) return lose("ARMY DESTROYED");
+            turnNo++; phase = "play"; beginPlayerTurn(); buildControls(); return;
+        }
+        const u = list[i++]; if (u.hp <= 0) return step();
+        const stops = reachable(u);
+        if (u.type === "medic") { aiMedic(u, stops); }
+        else {
+            let best = null;
+            for (const k of stops) { const r = k / COLS | 0, c = k % COLS; for (const t of targetsFrom(u, r, c)) { const dmg = dmgVal(u, t, r, c), kill = dmg >= t.hp, score = (kill ? 1000 : 0) + dmg; if (!best || score > best.score) best = { r, c, t, score }; } }
+            if (best) { u.r = best.r; u.c = best.c; resolve(u, best.t, u.r, u.c); cull(); checkWin(); }
+            else advance(u, stops);
+        }
+        if (phase === "over") return;
+        setTimeout(step, 240);
+    };
+    step();
+}
+function advance(u, stops) {
+    const targets = units.filter(p => p.team === "player" && p.hp > 0); if (!targets.length) return;
+    let gr, gc, bd = 1e9; for (const p of targets) { const d = Math.abs(p.r - u.r) + Math.abs(p.c - u.c); if (d < bd) { bd = d; gr = p.r; gc = p.c; } }
+    let bk = key(u.r, u.c), best = Math.abs(gr - u.r) + Math.abs(gc - u.c);
+    for (const k of stops) { const r = k / COLS | 0, c = k % COLS, d = Math.abs(gr - r) + Math.abs(gc - c); if (d < best) { best = d; bk = k; } }
+    u.r = bk / COLS | 0; u.c = bk % COLS;
+}
+function aiMedic(u, stops) {
+    let best = null;
+    for (const k of stops) { const r = k / COLS | 0, c = k % COLS; for (const f of units) { if (f.team !== "enemy" || f === u || f.hp <= 0 || f.hp >= UNITS[f.type].hp) continue; if (Math.abs(f.r - r) + Math.abs(f.c - c) === 1) { const need = UNITS[f.type].hp - f.hp; if (!best || need > best.need) best = { r, c, f, need }; } } }
+    if (best) { u.r = best.r; u.c = best.c; best.f.hp = Math.min(UNITS[best.f.type].hp, best.f.hp + UNITS.medic.heal); } else advance(u, stops);
+}
+function enemyBuild() {
+    const [hr, hc] = hqPos("enemy");
+    const order = ["tank", "at", "arty", "inf"];
+    for (const type of order) { if (eGold < UNITS[type].cost) continue; for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { const r = hr + dr, c = hc + dc; if (r < 0 || c < 0 || r >= ROWS || c >= COLS || BLOCK(terrain[r][c]) || unitAt(r, c)) continue; eGold -= UNITS[type].cost; const u = mk("enemy", type, r, c); u.acted = true; units.push(u); return; } }
+}
+
+function checkWin() { cull(); if (!units.some(u => u.team === "enemy" && u.hp > 0)) win("ENEMY ARMY ROUTED"); }
+function win(t) { phase = "over"; document.getElementById("ovt").textContent = "VICTORY"; document.getElementById("ovt").style.color = "#00ff88"; document.getElementById("ovs").textContent = t + " — won in " + turnNo + " turns"; document.getElementById("over").classList.add("show"); beep(660, 0.2); setTimeout(() => beep(990, 0.2), 150); }
+function lose(t) { phase = "over"; document.getElementById("ovt").textContent = "DEFEAT"; document.getElementById("ovt").style.color = "#ff3355"; document.getElementById("ovs").textContent = t; document.getElementById("over").classList.add("show"); beep(140, 0.5, "sawtooth", 0.2); }
+
+// ---- controls ----
+function buildControls() {
+    const c = document.getElementById("controls"); c.innerHTML = "";
+    const help = () => { const h = document.createElement("button"); h.className = "act bl"; h.textContent = "❓ HELP"; h.onclick = () => document.getElementById("help").classList.add("show"); return h; };
+    if (phase === "deploy") {
+        Object.keys(UNITS).forEach(k => { const s = UNITS[k]; const b = document.createElement("div"); b.className = "ubtn" + (selType === k ? " sel" : ""); b.style.opacity = budget < s.cost ? 0.5 : 1; b.innerHTML = `<span class="ic">${s.ic}</span>${s.name}<span class="cost">$${s.cost}</span>`; b.onclick = () => { selType = k; buildControls(); }; c.appendChild(b); });
+        const go = document.createElement("button"); go.className = "act go"; go.textContent = "▶ START"; go.disabled = !units.some(u => u.team === "player"); go.onclick = startInvasion; c.appendChild(go);
+        const info = document.createElement("div"); info.className = "gold"; info.textContent = "◆ " + budget; c.appendChild(info);
+        c.appendChild(help());
+    } else if (phase === "play") {
+        if (buildMode) {
+            Object.keys(UNITS).forEach(k => { const s = UNITS[k]; const b = document.createElement("div"); b.className = "ubtn" + (selType === k ? " sel" : ""); b.style.opacity = gold < s.cost ? 0.5 : 1; b.innerHTML = `<span class="ic">${s.ic}</span>${s.name}<span class="cost">$${s.cost}</span>`; b.onclick = () => { selType = k; buildControls(); }; c.appendChild(b); });
+            const done = document.createElement("button"); done.className = "act bl"; done.textContent = "DONE"; done.onclick = () => { buildMode = false; buildControls(); }; c.appendChild(done);
+        } else {
+            const e = document.createElement("button"); e.className = "act yl"; e.textContent = "END TURN"; e.onclick = endTurn; c.appendChild(e);
+            const bd = document.createElement("button"); bd.className = "act go"; bd.textContent = "BUILD"; bd.onclick = () => { sel = null; moveSet = null; buildMode = true; buildControls(); }; c.appendChild(bd);
+            c.appendChild(help());
+        }
+        const info = document.createElement("div"); info.className = "gold"; info.textContent = "◆ " + gold; c.appendChild(info);
+    } else { c.appendChild(help()); }
+}
+
+// ---- draw ----
+const TC = { 0: "#1d3a22", 1: "#143018", 2: "#3a3f47", 3: "#163a5e", 4: "#15324f", 5: "#4a1530", 6: "#2a2f1a" };
+function ownCol(o) { return o === "player" ? "#00f2ff" : o === "enemy" ? "#ff3355" : "#ffd700"; }
+function draw() {
+    ctx.fillStyle = "#05060f"; ctx.fillRect(0, 0, W, H);
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const x = c * T, y = r * T + TOP, t = terrain[r][c];
+        ctx.fillStyle = TC[t]; ctx.fillRect(x, y, T, T); ctx.strokeStyle = "rgba(0,0,0,0.25)"; ctx.strokeRect(x + 0.5, y + 0.5, T, T);
+        if (t === 1) { ctx.fillStyle = "#2f6b34"; ctx.beginPath(); ctx.arc(x + T / 2, y + T / 2, 9, 0, 7); ctx.fill(); }
+        if (t === 2) { ctx.fillStyle = "#566"; ctx.beginPath(); ctx.moveTo(x + 8, y + T - 8); ctx.lineTo(x + T / 2, y + 8); ctx.lineTo(x + T - 8, y + T - 8); ctx.fill(); }
+        if (t === 3) { ctx.fillStyle = "rgba(120,180,230,0.18)"; for (let i = 0; i < 3; i++) ctx.fillRect(x + 6, y + 12 + i * 10, T - 12, 2); }
+        if (t === 6) { ctx.fillStyle = ownCol(owner[r][c]); ctx.globalAlpha = 0.85; ctx.fillRect(x + 12, y + 14, T - 24, T - 22); ctx.globalAlpha = 1; ctx.fillStyle = "#000"; ctx.font = "13px Orbitron"; ctx.textAlign = "center"; ctx.fillText("▣", x + T / 2, y + T / 2 + 5); ctx.textAlign = "left"; }
+        if (t === 4 || t === 5) { ctx.fillStyle = ownCol(owner[r][c]); ctx.font = "20px Orbitron"; ctx.textAlign = "center"; ctx.fillText("⌂", x + T / 2, y + T / 2 + 7); ctx.textAlign = "left"; }
+    }
+    if (phase === "deploy") { ctx.fillStyle = "rgba(0,242,255,0.08)"; for (let r = 0; r < ROWS; r++) for (let c = 0; c < 3; c++) if (!BLOCK(terrain[r][c]) && terrain[r][c] !== 4) ctx.fillRect(c * T, r * T + TOP, T, T); }
+    if (phase === "play" && buildMode) { const [hr, hc] = hqPos("player"); ctx.fillStyle = "rgba(0,255,136,0.16)"; for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { const r = hr + dr, c = hc + dc; if (r >= 0 && c >= 0 && r < ROWS && c < COLS && !BLOCK(terrain[r][c]) && !unitAt(r, c)) ctx.fillRect(c * T, r * T + TOP, T, T); } }
+    if (sel && phase === "play" && !buildMode) {
+        if (!moved) { ctx.fillStyle = "rgba(0,242,255,0.22)"; moveSet.forEach(k => ctx.fillRect((k % COLS) * T, (k / COLS | 0) * T + TOP, T, T)); }
+        const tcol = sel.type === "medic" ? "rgba(0,255,136,0.35)" : "rgba(255,51,85,0.3)";
+        ctx.fillStyle = tcol; targetsFrom(sel, sel.r, sel.c).forEach(t => ctx.fillRect(t.c * T, t.r * T + TOP, T, T));
+        ctx.strokeStyle = "#ffd700"; ctx.lineWidth = 3; ctx.strokeRect(sel.c * T + 2, sel.r * T + TOP + 2, T - 4, T - 4); ctx.lineWidth = 1;
+    }
+    for (const u of units) if (u.hp > 0) drawUnit(u);
+    // HUD
+    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, TOP);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 15px Orbitron"; ctx.textAlign = "left";
+    ctx.fillText(phase === "deploy" ? "DEPLOY PHASE" : phase === "enemy" ? "ENEMY TURN" : buildMode ? "BUILD MODE" : "TURN " + turnNo, 10, 19);
+    ctx.fillStyle = "#9bd"; ctx.font = "11px Orbitron"; ctx.fillText(msg, 10, 36);
+    const pe = units.filter(u => u.team === "player" && u.hp > 0).length, en = units.filter(u => u.team === "enemy" && u.hp > 0).length;
+    ctx.textAlign = "right"; ctx.fillStyle = "#00f2ff"; ctx.fillText("YOU " + pe, W - 96, 22); ctx.fillStyle = "#ff3355"; ctx.fillText("ENEMY " + en, W - 10, 22); ctx.textAlign = "left";
+}
+function drawUnit(u) {
+    const x = u.c * T, y = u.r * T + TOP, s = UNITS[u.type], pl = u.team === "player";
+    if (s.fly) { ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(x + T / 2, y + T - 8, 13, 5, 0, 0, 7); ctx.fill(); }
+    ctx.fillStyle = pl ? "#13314e" : "#4a1320"; ctx.fillRect(x + 5, y + 5, T - 10, T - 10);
+    ctx.strokeStyle = (u.acted && pl) ? "#456" : (pl ? "#00f2ff" : "#ff3355"); ctx.lineWidth = 2; ctx.strokeRect(x + 5, y + 5, T - 10, T - 10); ctx.lineWidth = 1;
+    ctx.font = "17px Orbitron"; ctx.textAlign = "center"; ctx.fillText(s.ic, x + T / 2, y + T / 2 + 3); ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(x + 6, y + T - 11, T - 12, 5);
+    ctx.fillStyle = u.hp > 6 ? "#00ff88" : u.hp > 3 ? "#ffd700" : "#ff3355"; ctx.fillRect(x + 6, y + T - 11, (T - 12) * u.hp / s.hp, 5);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 9px Orbitron"; ctx.fillText(u.hp, x + T - 11, y + 14);
+    for (let v = 0; v < u.vet; v++) { ctx.fillStyle = "#ffd700"; ctx.beginPath(); ctx.arc(x + 9 + v * 5, y + 9, 1.8, 0, 7); ctx.fill(); }
+}
+function loop() { draw(); requestAnimationFrame(loop); }
+
+canvas.addEventListener("click", e => { const rect = canvas.getBoundingClientRect(); const mx = (e.clientX - rect.left) * (W / rect.width), my = (e.clientY - rect.top) * (H / rect.height); if (my < TOP) return; clickTile((my - TOP) / T | 0, mx / T | 0); });
+document.getElementById("start").onclick = () => { if (!AC) beep(440); newBattle(); document.getElementById("menu").classList.remove("show"); };
+document.getElementById("retry").onclick = () => { newBattle(); document.getElementById("over").classList.remove("show"); };
+document.getElementById("help-close").onclick = () => document.getElementById("help").classList.remove("show");
+window.addEventListener("keydown", e => { if (e.key === "h" || e.key === "H") document.getElementById("help").classList.toggle("show"); });
+newBattle(); loop();
+</script>
+</body>
+</html>

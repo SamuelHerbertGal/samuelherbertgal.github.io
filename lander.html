@@ -44,7 +44,7 @@ function genTerrain() {
     while (x < W) {
         const pad = padXs.find(px => Math.abs(px - x) < 30);
         if (pad && !pads.some(p => Math.abs(p.x - x) < 90)) {
-            const pw = 70 - Math.min(40, level * 5), py = y;
+            const pw = 84 - Math.min(34, level * 4), py = y;
             pads.push({ x: x + pw / 2, y: py, w: pw, mult: pw < 45 ? 3 : pw < 60 ? 2 : 1 });
             terrain.push([x, py], [x + pw, py]); x += pw;
         } else { terrain.push([x, y]); y += (Math.random() - 0.5) * 80; y = Math.max(H - 220, Math.min(H - 30, y)); x += 24 + Math.random() * 24; }
@@ -52,7 +52,7 @@ function genTerrain() {
     terrain.push([W, y]);
     stars = Array.from({ length: 60 }, () => ({ x: Math.random() * W, y: Math.random() * H * 0.7 }));
 }
-function reset(full) { if (full) { score = 0; level = 1; } genTerrain(); ship = { x: 80 + Math.random() * 80, y: 60, vx: 0.5 + Math.random(), vy: 0, a: 0, fuel: 100 + level * 0 + 120 }; shake = 0; }
+function reset(full) { if (full) { score = 0; level = 1; } genTerrain(); ship = { x: 80 + Math.random() * 80, y: 60, vx: 0.3 + Math.random() * 0.6, vy: 0, a: 0, fuel: 300 }; shake = 0; }
 function groundYAt(x) {
     for (let i = 0; i < terrain.length - 1; i++) { const [x1, y1] = terrain[i], [x2, y2] = terrain[i + 1]; if (x >= x1 && x <= x2) { const t = (x - x1) / (x2 - x1 || 1); return y1 + (y2 - y1) * t; } }
     return H;
@@ -63,7 +63,7 @@ function update(dt) {
     if (keys.ArrowLeft) ship.a -= 2.6 * dt; if (keys.ArrowRight) ship.a += 2.6 * dt;
     const thrusting = (keys.ArrowUp || keys[" "]) && ship.fuel > 0;
     if (thrusting) { ship.vx += Math.sin(ship.a) * 9 * dt; ship.vy -= Math.cos(ship.a) * 9 * dt; ship.fuel -= 22 * dt; }
-    ship.vy += 3.2 * dt;   // gravity
+    ship.vy += 2.4 * dt;   // gravity
     ship.x += ship.vx * 18 * dt; ship.y += ship.vy * 18 * dt;
     if (ship.x < 0) ship.x = 0; if (ship.x > W) ship.x = W;
     // collision with ground
@@ -72,8 +72,8 @@ function update(dt) {
         ship.y = gy - 12;
         const pad = pads.find(p => Math.abs(ship.x - p.x) < p.w / 2 && Math.abs(p.y - gy) < 4);
         const speed = Math.hypot(ship.vx, ship.vy), upright = Math.abs(((ship.a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) < 0.25 || Math.abs(ship.a % (Math.PI * 2)) > Math.PI * 2 - 0.25;
-        const angOk = Math.cos(ship.a) > 0.96;
-        if (pad && speed < 2.2 && angOk) { land(pad); } else { crash(); }
+        const angOk = Math.cos(ship.a) > 0.9;
+        if (pad && speed < 3.2 && angOk) { land(pad); } else { crash(); }
     }
 }
 function land(pad) {
@@ -115,11 +115,11 @@ function draw() {
     if (ship) {
         const speed = Math.hypot(ship.vx, ship.vy);
         ctx.fillStyle = "#fff"; ctx.font = "bold 14px Orbitron"; ctx.fillText("SCORE " + score + "   LV " + level, 12, 22);
-        ctx.fillStyle = speed < 2.2 ? "#00ff88" : "#ff3355"; ctx.fillText("V " + speed.toFixed(1), 12, 42);
-        ctx.fillStyle = Math.cos(ship.a) > 0.96 ? "#00ff88" : "#ff3355"; ctx.fillText("∠ " + (Math.abs(((ship.a * 180 / Math.PI) % 360))).toFixed(0) + "°", 90, 42);
+        ctx.fillStyle = speed < 3.2 ? "#00ff88" : "#ff3355"; ctx.fillText("V " + speed.toFixed(1), 12, 42);
+        ctx.fillStyle = Math.cos(ship.a) > 0.9 ? "#00ff88" : "#ff3355"; ctx.fillText("∠ " + (Math.abs(((ship.a * 180 / Math.PI) % 360))).toFixed(0) + "°", 90, 42);
         ctx.fillStyle = "#9bd"; ctx.font = "11px Orbitron"; ctx.fillText("FUEL", W - 120, 18);
         ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.fillRect(W - 120, 22, 108, 10);
-        ctx.fillStyle = ship.fuel < 30 ? "#ff3355" : "#00ff88"; ctx.fillRect(W - 120, 22, 108 * Math.max(0, ship.fuel) / 220, 10);
+        ctx.fillStyle = ship.fuel < 40 ? "#ff3355" : "#00ff88"; ctx.fillRect(W - 120, 22, 108 * Math.max(0, ship.fuel) / 300, 10);
     }
 }
 let last = 0;
