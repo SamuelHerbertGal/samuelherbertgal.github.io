@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gomoku</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root { --neon-blue:#00f2ff; --neon-pink:#ff00ff; --gold:#ffd700; --green:#00ff88; --red:#ff3355; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#000;color:var(--neon-blue);font-family:'Orbitron',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden;}
+#frame{position:relative;border:3px solid var(--neon-blue);border-radius:8px;box-shadow:0 0 35px rgba(0,242,255,0.4);background:#05060f;}
+canvas{display:block;cursor:pointer;}
+.panel{position:absolute;inset:0;background:rgba(2,2,12,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border-radius:6px;z-index:5;padding:24px;}
+.panel.hidden{display:none;}
+h1{font-size:2.1rem;font-weight:900;font-style:italic;color:#fff;text-shadow:0 0 22px var(--neon-pink);margin-bottom:8px;}
+.sub{font-size:0.85rem;opacity:0.85;margin-bottom:18px;line-height:1.6;max-width:420px;}
+button{background:transparent;color:var(--neon-blue);border:2px solid var(--neon-blue);border-radius:10px;padding:12px 36px;font-family:'Orbitron';font-size:1.05rem;font-weight:700;cursor:pointer;transition:0.2s;}
+button:hover{background:var(--neon-blue);color:#000;box-shadow:0 0 28px var(--neon-blue);}
+</style>
+</head>
+<body>
+<div id="frame">
+<canvas id="c" width="464" height="500"></canvas>
+<div id="menu" class="panel"><h1>GOMOKU</h1><p class="sub">Five in a row wins. You play the <b>cyan</b> stones, the CPU plays <b>pink</b>. Click any intersection to place a stone. Line up five horizontally, vertically, or diagonally.</p><button id="start">PLAY</button></div>
+<div id="over" class="panel hidden"><h1 id="ovt">YOU WIN</h1><p class="sub" id="ovs"></p><button id="retry">REMATCH</button></div>
+</div>
+<script>
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
+const N=15,GAP=30,MG=22;
+let AC=null;function beep(f,d=0.06,t="square",v=0.08){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
+let board,turn,state="menu",msg,last=null,winLine=null;
+const cell=(r,c)=>(r<0||r>=N||c<0||c>=N)?-1:board[r][c];
+function reset(){board=Array.from({length:N},()=>Array(N).fill(0));turn=1;msg="Your move.";last=null;winLine=null;}
+const DIRS=[[0,1],[1,0],[1,1],[1,-1]];
+function winAt(r,c,who){for(const[dr,dc]of DIRS){let cnt=1,line=[[r,c]];for(let s=1;s<5;s++){if(cell(r+dr*s,c+dc*s)===who){cnt++;line.push([r+dr*s,c+dc*s]);}else break;}for(let s=1;s<5;s++){if(cell(r-dr*s,c-dc*s)===who){cnt++;line.push([r-dr*s,c-dc*s]);}else break;}if(cnt>=5)return line;}return null;}
+function place(r,c,who){board[r][c]=who;last=[r,c];const w=winAt(r,c,who);if(w){winLine=w;state="over";const win=who===1;document.getElementById("ovt").textContent=win?"YOU WIN":"CPU WINS";document.getElementById("ovt").style.color=win?"#00ff88":"#ff3355";document.getElementById("ovs").textContent=win?"Five in a row!":"The CPU lined up five.";document.getElementById("over").classList.remove("hidden");beep(win?880:150,0.3,"sawtooth",0.14);return true;}return false;}
+function patVal(count,open){if(count>=5)return 1e7;if(count===4)return open===2?100000:open===1?12000:0;if(count===3)return open===2?6000:open===1?450:0;if(count===2)return open===2?260:open===1?24:0;return open>=1?open*6:1;}
+function evalPlace(r,c,who){let tot=0;for(const[dr,dc]of DIRS){let count=1,i=1;while(cell(r+dr*i,c+dc*i)===who){count++;i++;}const f=cell(r+dr*i,c+dc*i);let j=1;while(cell(r-dr*j,c-dc*j)===who){count++;j++;}const b=cell(r-dr*j,c-dc*j);let open=0;if(f===0)open++;if(b===0)open++;tot+=patVal(count,open);}return tot;}
+function candidates(){const set=new Set();let any=false;for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(board[r][c]){any=true;for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++){const nr=r+dr,nc=c+dc;if(cell(nr,nc)===0)set.add(nr+","+nc);}}if(!any)return[[7,7]];return[...set].map(s=>s.split(",").map(Number));}
+function cpuMove(){if(state!=="play")return;const cand=candidates();
+ for(const[r,c]of cand){if(winAt2(r,c,2)){place(r,c,2);finishCpu();return;}}
+ for(const[r,c]of cand){if(winAt2(r,c,1)){place(r,c,2);finishCpu();return;}}
+ let best=cand[0],bv=-1;for(const[r,c]of cand){const v=evalPlace(r,c,2)*1.0+evalPlace(r,c,1)*1.12+(7-Math.abs(r-7)-Math.abs(c-7))*0.5+Math.random()*3;if(v>bv){bv=v;best=[r,c];}}place(best[0],best[1],2);finishCpu();}
+function winAt2(r,c,who){board[r][c]=who;const w=winAt(r,c,who);board[r][c]=0;return w;}
+function finishCpu(){beep(300,0.06);if(state==="play"){turn=1;msg="Your move.";}}
+function click(r,c){if(state!=="play"||turn!==1||cell(r,c)!==0)return;beep(560,0.05);if(place(r,c,1))return;turn=2;msg="CPU thinking…";setTimeout(cpuMove,250);}
+function draw(){ctx.fillStyle="#0c1626";ctx.fillRect(0,0,464,500);
+ ctx.strokeStyle="rgba(0,242,255,0.35)";ctx.lineWidth=1;for(let i=0;i<N;i++){ctx.beginPath();ctx.moveTo(MG,MG+i*GAP);ctx.lineTo(MG+(N-1)*GAP,MG+i*GAP);ctx.stroke();ctx.beginPath();ctx.moveTo(MG+i*GAP,MG);ctx.lineTo(MG+i*GAP,MG+(N-1)*GAP);ctx.stroke();}
+ for(const[r,c]of[[3,3],[3,11],[11,3],[11,11],[7,7]]){ctx.fillStyle="rgba(0,242,255,0.5)";ctx.beginPath();ctx.arc(MG+c*GAP,MG+r*GAP,3,0,7);ctx.fill();}
+ for(let r=0;r<N;r++)for(let c=0;c<N;c++){const v=board[r][c];if(!v)continue;const x=MG+c*GAP,y=MG+r*GAP,col=v===1?"#00f2ff":"#ff3df0";ctx.fillStyle="#050810";ctx.beginPath();ctx.arc(x,y,11,0,7);ctx.fill();ctx.fillStyle=col;ctx.shadowBlur=10;ctx.shadowColor=col;ctx.beginPath();ctx.arc(x,y,10,0,7);ctx.fill();ctx.shadowBlur=0;}
+ if(last){const x=MG+last[1]*GAP,y=MG+last[0]*GAP;ctx.strokeStyle="#ffd700";ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,13,0,7);ctx.stroke();}
+ if(winLine){ctx.strokeStyle="#fff";ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(MG+winLine[0][1]*GAP,MG+winLine[0][0]*GAP);ctx.lineTo(MG+winLine[winLine.length-1][1]*GAP,MG+winLine[winLine.length-1][0]*GAP);ctx.stroke();}
+ ctx.fillStyle="#9bd";ctx.font="bold 15px Orbitron";ctx.textAlign="center";ctx.fillText(msg,232,485);ctx.textAlign="left";}
+let running=false;function loop(){if(state==="play"||state==="over")draw();requestAnimationFrame(loop);}
+canvas.addEventListener("click",e=>{if(state!=="play")return;const r=canvas.getBoundingClientRect();const x=(e.clientX-r.left)*(464/r.width),y=(e.clientY-r.top)*(500/r.height);const c=Math.round((x-MG)/GAP),rr=Math.round((y-MG)/GAP);if(rr>=0&&rr<N&&c>=0&&c<N)click(rr,c);});
+function start(){if(!AC)beep(440);reset();state="play";document.getElementById("menu").classList.add("hidden");document.getElementById("over").classList.add("hidden");if(!running){running=true;loop();}}
+document.getElementById("start").onclick=start;document.getElementById("retry").onclick=start;
+</script>
+</body>
+</html>

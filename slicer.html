@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fruit Slicer</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root { --neon-blue:#00f2ff; --neon-pink:#ff00ff; --gold:#ffd700; --green:#00ff88; --red:#ff3355; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#000;color:var(--neon-blue);font-family:'Orbitron',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden;}
+#frame{position:relative;border:3px solid var(--neon-blue);border-radius:8px;box-shadow:0 0 35px rgba(0,242,255,0.4);background:#05060f;}
+canvas{display:block;cursor:crosshair;}
+.panel{position:absolute;inset:0;background:rgba(2,2,12,0.9);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border-radius:6px;z-index:5;padding:24px;}
+.panel.hidden{display:none;}
+h1{font-size:2.1rem;font-weight:900;font-style:italic;color:#fff;text-shadow:0 0 22px var(--neon-pink);margin-bottom:8px;}
+.sub{font-size:0.85rem;opacity:0.85;margin-bottom:18px;line-height:1.6;max-width:420px;}
+button{background:transparent;color:var(--neon-blue);border:2px solid var(--neon-blue);border-radius:10px;padding:12px 36px;font-family:'Orbitron';font-size:1.05rem;font-weight:700;cursor:pointer;transition:0.2s;}
+button:hover{background:var(--neon-blue);color:#000;box-shadow:0 0 28px var(--neon-blue);}
+</style>
+</head>
+<body>
+<div id="frame">
+<canvas id="c" width="600" height="500"></canvas>
+<div id="menu" class="panel"><h1>FRUIT SLICER</h1><p class="sub">Swipe the mouse to slice flying fruit. Chain slices for combo bonuses. <b>Don't slice the bombs</b> 💣 and don't let three fruit drop.</p><button id="start">SLICE</button></div>
+<div id="over" class="panel hidden"><h1 id="ovt">GAME OVER</h1><p class="sub" id="ovs"></p><button id="retry">AGAIN</button></div>
+</div>
+<script>
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
+const W=600,H=500,G=1100;
+let AC=null;function beep(f,d=0.06,t="square",v=0.08){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
+const FRUITS=[["🍉","#ff4d6d"],["🍊","#ff9f1c"],["🍋","#ffe600"],["🍏","#8cff5a"],["🍇","#b06bff"],["🍓","#ff5a8c"],["🥝","#9bd44a"]];
+let items,parts,blade,score,lives,combo,comboT,state="menu",spawnT,best=+(localStorage.getItem("slicerBest")||0);
+function reset(){items=[];parts=[];blade=[];score=0;lives=3;combo=0;comboT=0;spawnT=0.6;}
+function spawn(){const bomb=Math.random()<0.16;const x=60+Math.random()*(W-120);const f=FRUITS[Math.random()*FRUITS.length|0];
+ items.push({x,y:H+30,vx:(W/2-x)*0.7+(Math.random()-0.5)*160,vy:-(760+Math.random()*260),r:30,emoji:bomb?"💣":f[0],col:bomb?"#888":f[1],bomb,sliced:false});}
+function slicePt(x,y){for(const it of items){if(it.sliced)continue;if(Math.hypot(it.x-x,it.y-y)<it.r+6){hit(it);}}}
+function hit(it){it.sliced=true;
+ if(it.bomb){for(let i=0;i<40;i++)parts.push({x:it.x,y:it.y,vx:(Math.random()-0.5)*500,vy:(Math.random()-0.5)*500,life:0.7,col:i%2?"#ff8c00":"#fff"});beep(80,0.5,"sawtooth",0.2);gameOver("You sliced a bomb!");return;}
+ combo++;comboT=0.5;const pts=combo>=3?2:1;score+=pts;
+ if(combo>=3)floatText(it.x,it.y,"COMBO x"+combo);
+ for(let i=0;i<16;i++)parts.push({x:it.x,y:it.y,vx:(Math.random()-0.5)*360,vy:(Math.random()-0.5)*360-100,life:0.6,col:it.col});
+ beep(500+combo*40,0.06);}
+let floats=[];function floatText(x,y,t){floats.push({x,y,t,life:0.8});}
+function gameOver(reason){state="over";if(score>best){best=score;localStorage.setItem("slicerBest",best);}document.getElementById("ovt").textContent="GAME OVER";document.getElementById("ovs").textContent=reason+" · Score "+score+" · Best "+best;document.getElementById("over").classList.remove("hidden");}
+function update(dt){if(state!=="play")return;
+ spawnT-=dt;if(spawnT<=0){const burst=1+(Math.random()<Math.min(0.5,score/60)?1:0);for(let i=0;i<burst;i++)spawn();spawnT=Math.max(0.45,1.1-score*0.012);}
+ for(const it of items){it.vy+=G*dt;it.x+=it.vx*dt;it.y+=it.vy*dt;}
+ for(let i=items.length-1;i>=0;i--){const it=items[i];if(it.y>H+60){if(!it.sliced&&!it.bomb){lives--;beep(180,0.15);floatText(W/2,H/2,"MISS");if(lives<=0){gameOver("Too many dropped!");return;}}items.splice(i,1);}}
+ for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.vy+=G*0.5*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life<=0)parts.splice(i,1);}
+ for(let i=floats.length-1;i>=0;i--){floats[i].y-=dt*40;floats[i].life-=dt;if(floats[i].life<=0)floats.splice(i,1);}
+ if(comboT>0){comboT-=dt;if(comboT<=0)combo=0;}
+ for(let i=blade.length-1;i>=0;i--){blade[i].life-=dt;if(blade[i].life<=0)blade.splice(i,1);}}
+function draw(){ctx.fillStyle="#0a0e18";ctx.fillRect(0,0,W,H);
+ for(const p of parts){ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle=p.col;ctx.fillRect(p.x-3,p.y-3,6,6);}ctx.globalAlpha=1;
+ for(const it of items){if(it.sliced)continue;ctx.font="46px serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowBlur=16;ctx.shadowColor=it.col;ctx.fillText(it.emoji,it.x,it.y);ctx.shadowBlur=0;}
+ ctx.textBaseline="alphabetic";
+ // blade trail
+ if(blade.length>1){ctx.strokeStyle="rgba(255,255,255,0.9)";ctx.lineWidth=4;ctx.lineCap="round";ctx.shadowBlur=12;ctx.shadowColor="#00f2ff";ctx.beginPath();ctx.moveTo(blade[0].x,blade[0].y);for(let i=1;i<blade.length;i++)ctx.lineTo(blade[i].x,blade[i].y);ctx.stroke();ctx.shadowBlur=0;}
+ for(const f of floats){ctx.globalAlpha=Math.max(0,f.life);ctx.fillStyle="#ffd700";ctx.font="bold 20px Orbitron";ctx.textAlign="center";ctx.fillText(f.t,f.x,f.y);}ctx.globalAlpha=1;ctx.textAlign="left";
+ ctx.fillStyle="#ffd700";ctx.font="bold 18px Orbitron";ctx.fillText("★ "+score,12,26);
+ ctx.fillStyle="#ff3355";ctx.textAlign="right";ctx.fillText("♥".repeat(Math.max(0,lives)),W-12,26);ctx.textAlign="left";}
+let last=0;function loop(ts){const dt=Math.min((ts-last)/1000,0.033);last=ts;update(dt);if(state!=="menu")draw();requestAnimationFrame(loop);}
+canvas.addEventListener("mousemove",e=>{if(state!=="play")return;const r=canvas.getBoundingClientRect();const x=(e.clientX-r.left)*(W/r.width),y=(e.clientY-r.top)*(H/r.height);blade.push({x,y,life:0.18});if(blade.length>14)blade.shift();slicePt(x,y);});
+function start(){if(!AC)beep(440);reset();state="play";document.getElementById("menu").classList.add("hidden");document.getElementById("over").classList.add("hidden");}
+document.getElementById("start").onclick=start;document.getElementById("retry").onclick=start;
+if(best>0)document.querySelector("#menu .sub").innerHTML+="<br><b>Best: "+best+"</b>";
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

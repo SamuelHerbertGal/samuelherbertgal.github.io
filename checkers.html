@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Checkers</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root { --neon-blue:#00f2ff; --neon-pink:#ff00ff; --gold:#ffd700; --green:#00ff88; --red:#ff3355; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#000;color:var(--neon-blue);font-family:'Orbitron',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden;}
+#frame{position:relative;border:3px solid var(--neon-blue);border-radius:8px;box-shadow:0 0 35px rgba(0,242,255,0.4);background:#05060f;}
+canvas{display:block;cursor:pointer;}
+.panel{position:absolute;inset:0;background:rgba(2,2,12,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border-radius:6px;z-index:5;padding:24px;}
+.panel.hidden{display:none;}
+h1{font-size:2.1rem;font-weight:900;font-style:italic;color:#fff;text-shadow:0 0 22px var(--neon-pink);margin-bottom:8px;}
+.sub{font-size:0.85rem;opacity:0.85;margin-bottom:18px;line-height:1.6;max-width:420px;}
+button{background:transparent;color:var(--neon-blue);border:2px solid var(--neon-blue);border-radius:10px;padding:12px 36px;font-family:'Orbitron';font-size:1.05rem;font-weight:700;cursor:pointer;transition:0.2s;}
+button:hover{background:var(--neon-blue);color:#000;box-shadow:0 0 28px var(--neon-blue);}
+</style>
+</head>
+<body>
+<div id="frame">
+<canvas id="c" width="480" height="516"></canvas>
+<div id="menu" class="panel"><h1>CHECKERS</h1><p class="sub">You are <b>green</b> (bottom). Click a piece, then a highlighted square. Captures are mandatory and can chain. Reach the far row to crown a king.</p><button id="start">PLAY</button></div>
+<div id="over" class="panel hidden"><h1 id="ovt">YOU WIN</h1><p class="sub" id="ovs"></p><button id="retry">REMATCH</button></div>
+</div>
+<script>
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
+const S=60,N=8;
+let AC=null;function beep(f,d=0.06,t="square",v=0.08){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
+let board,turn,sel,mustPiece,state="menu",msg="";
+const inb=(r,c)=>r>=0&&r<N&&c>=0&&c<N;
+const clone=b=>b.map(r=>r.slice());
+function reset(){board=Array.from({length:N},()=>Array(N).fill(0));
+ for(let r=0;r<3;r++)for(let c=0;c<N;c++)if((r+c)%2)board[r][c]=-1;
+ for(let r=5;r<N;r++)for(let c=0;c<N;c++)if((r+c)%2)board[r][c]=1;
+ turn=1;sel=null;mustPiece=null;msg="Your move.";}
+function dirsFor(p){const k=Math.abs(p)===2,s=Math.sign(p);return k?[[-1,-1],[-1,1],[1,-1],[1,1]]:s>0?[[-1,-1],[-1,1]]:[[1,-1],[1,1]];}
+function jumpSteps(b,r,c){const p=b[r][c];if(!p)return[];const res=[];for(const[dr,dc]of dirsFor(p)){const mr=r+dr,mc=c+dc,tr=r+2*dr,tc=c+2*dc;if(inb(tr,tc)&&b[tr][tc]===0&&b[mr][mc]!==0&&Math.sign(b[mr][mc])===-Math.sign(p))res.push({mr,mc,tr,tc});}return res;}
+function simpleSteps(b,r,c){const p=b[r][c];if(!p)return[];const res=[];for(const[dr,dc]of dirsFor(p)){const tr=r+dr,tc=c+dc;if(inb(tr,tc)&&b[tr][tc]===0)res.push({tr,tc});}return res;}
+function sideHasCap(b,side){for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(Math.sign(b[r][c])===side&&jumpSteps(b,r,c).length)return true;return false;}
+// full-move generation for AI
+function expandCap(b,r,c){const out=[];for(const j of jumpSteps(b,r,c)){const nb=clone(b);let p=nb[r][c];nb[r][c]=0;nb[j.mr][j.mc]=0;let prom=false;if(p===1&&j.tr===0){p=2;prom=true;}if(p===-1&&j.tr===7){p=-2;prom=true;}nb[j.tr][j.tc]=p;const more=prom?[]:expandCap(nb,j.tr,j.tc);if(more.length)out.push(...more);else out.push(nb);}return out;}
+function genFull(b,side){const caps=[];for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(Math.sign(b[r][c])===side){const e=expandCap(b,r,c);if(e.length)caps.push(...e.map(nb=>({board:nb})));}if(caps.length)return caps;const mv=[];for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(Math.sign(b[r][c])===side)for(const s of simpleSteps(b,r,c)){const nb=clone(b);let p=nb[r][c];nb[r][c]=0;if(p===1&&s.tr===0)p=2;if(p===-1&&s.tr===7)p=-2;nb[s.tr][s.tc]=p;mv.push({board:nb});}return mv;}
+function evalB(b){let s=0;for(let r=0;r<N;r++)for(let c=0;c<N;c++){const v=b[r][c];if(!v)continue;const side=Math.sign(v);let val=Math.abs(v)===2?175:100;if(Math.abs(v)===1)val+=side>0?(7-r)*7:r*7;if(c===0||c===7)val+=6;s+=side*val;}return s;}
+function minimax(b,d,a,be,side){const mv=genFull(b,side);if(!mv.length)return side>0?-99999:99999;if(d===0)return evalB(b);if(side>0){let best=-1e9;for(const m of mv){best=Math.max(best,minimax(m.board,d-1,a,be,-1));a=Math.max(a,best);if(be<=a)break;}return best;}else{let best=1e9;for(const m of mv){best=Math.min(best,minimax(m.board,d-1,a,be,1));be=Math.min(be,best);if(be<=a)break;}return best;}}
+function cpuMove(){const mv=genFull(board,-1);if(!mv.length){endGame(true);return;}for(let i=mv.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[mv[i],mv[j]]=[mv[j],mv[i]];}let best=null,bv=1e9;for(const m of mv){const v=minimax(m.board,3,-1e9,1e9,1);if(v<bv){bv=v;best=m;}}board=best.board;beep(300,0.06);turn=1;msg="Your move.";if(!genFull(board,1).length)endGame(false);}
+function doJump(sr,sc,j){let p=board[sr][sc];board[sr][sc]=0;board[j.mr][j.mc]=0;let prom=false;if(p===1&&j.tr===0){p=2;prom=true;}if(p===-1&&j.tr===7){p=-2;prom=true;}board[j.tr][j.tc]=p;beep(660,0.06);
+ if(!prom&&jumpSteps(board,j.tr,j.tc).length){mustPiece=[j.tr,j.tc];sel=[j.tr,j.tc];msg="Keep jumping!";}
+ else{mustPiece=null;sel=null;turn=-1;msg="CPU thinking…";if(!genFull(board,-1).length){endGame(true);return;}setTimeout(cpuMove,420);}}
+function click(r,c){if(state!=="play"||turn!==1)return;
+ if(mustPiece){const[mr,mc]=mustPiece;const j=jumpSteps(board,mr,mc).find(x=>x.tr===r&&x.tc===c);if(j)doJump(mr,mc,j);else beep(160,0.08);return;}
+ const capAvail=sideHasCap(board,1);
+ if(board[r][c]>0){if(capAvail&&!jumpSteps(board,r,c).length){beep(160,0.08);msg="You must capture.";return;}sel=[r,c];return;}
+ if(sel){const[sr,sc]=sel;const j=jumpSteps(board,sr,sc).find(x=>x.tr===r&&x.tc===c);if(j){doJump(sr,sc,j);return;}if(!capAvail){const s=simpleSteps(board,sr,sc).find(x=>x.tr===r&&x.tc===c);if(s){let p=board[sr][sc];board[sr][sc]=0;if(p===1&&r===0)p=2;board[r][c]=p;beep(420,0.05);sel=null;turn=-1;msg="CPU thinking…";if(!genFull(board,-1).length){endGame(true);return;}setTimeout(cpuMove,420);}}}}
+function endGame(playerWon){state="over";document.getElementById("ovt").textContent=playerWon?"YOU WIN":"CPU WINS";document.getElementById("ovt").style.color=playerWon?"#00ff88":"#ff3355";document.getElementById("ovs").textContent=playerWon?"The CPU has no moves left.":"You're out of moves.";document.getElementById("over").classList.remove("hidden");beep(playerWon?880:150,0.3,"sawtooth",0.14);}
+function draw(){for(let r=0;r<N;r++)for(let c=0;c<N;c++){ctx.fillStyle=(r+c)%2?"#132133":"#1d2f45";ctx.fillRect(c*S,r*S,S,S);}
+ // highlights
+ if(sel){const[sr,sc]=sel;ctx.fillStyle="rgba(255,215,0,0.35)";ctx.fillRect(sc*S,sr*S,S,S);const steps=sideHasCap(board,1)||mustPiece?jumpSteps(board,sr,sc).map(j=>({tr:j.tr,tc:j.tc})):simpleSteps(board,sr,sc);for(const s of steps){ctx.fillStyle="rgba(0,255,136,0.35)";ctx.beginPath();ctx.arc(s.tc*S+S/2,s.tr*S+S/2,12,0,7);ctx.fill();}}
+ for(let r=0;r<N;r++)for(let c=0;c<N;c++){const v=board[r][c];if(!v)continue;const col=v>0?"#00ff88":"#ff3df0";ctx.fillStyle="#0a0a0a";ctx.beginPath();ctx.arc(c*S+S/2,r*S+S/2,22,0,7);ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=4;ctx.shadowBlur=12;ctx.shadowColor=col;ctx.beginPath();ctx.arc(c*S+S/2,r*S+S/2,22,0,7);ctx.stroke();ctx.shadowBlur=0;if(Math.abs(v)===2){ctx.fillStyle=col;ctx.font="900 22px Orbitron";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("♛",c*S+S/2,r*S+S/2+1);ctx.textBaseline="alphabetic";ctx.textAlign="left";}}
+ ctx.fillStyle="rgba(0,0,0,0.55)";ctx.fillRect(0,480,480,36);ctx.fillStyle="#9bd";ctx.font="bold 14px Orbitron";ctx.fillText(msg,12,503);}
+let running=false;function loop(){if(state==="play")draw();requestAnimationFrame(loop);}
+canvas.addEventListener("click",e=>{const r=canvas.getBoundingClientRect();const x=(e.clientX-r.left)*(480/r.width),y=(e.clientY-r.top)*(516/r.height);if(y>480)return;click(Math.floor(y/S),Math.floor(x/S));});
+function start(){if(!AC)beep(440);reset();state="play";document.getElementById("menu").classList.add("hidden");document.getElementById("over").classList.add("hidden");if(!running){running=true;loop();}}
+document.getElementById("start").onclick=start;document.getElementById("retry").onclick=start;
+</script>
+</body>
+</html>

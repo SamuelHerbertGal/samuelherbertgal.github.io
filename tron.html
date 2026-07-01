@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Light Cycles</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root { --neon-blue:#00f2ff; --neon-pink:#ff00ff; --gold:#ffd700; --green:#00ff88; --red:#ff3355; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#000;color:var(--neon-blue);font-family:'Orbitron',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden;}
+#frame{position:relative;border:3px solid var(--neon-blue);border-radius:8px;box-shadow:0 0 35px rgba(0,242,255,0.4);background:#05060f;}
+canvas{display:block;}
+.panel{position:absolute;inset:0;background:rgba(2,2,12,0.9);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border-radius:6px;z-index:5;padding:24px;}
+.panel.hidden{display:none;}
+h1{font-size:2.1rem;font-weight:900;font-style:italic;color:#fff;text-shadow:0 0 22px var(--neon-pink);margin-bottom:8px;}
+.sub{font-size:0.85rem;opacity:0.85;margin-bottom:18px;line-height:1.6;max-width:420px;}
+button{background:transparent;color:var(--neon-blue);border:2px solid var(--neon-blue);border-radius:10px;padding:12px 36px;font-family:'Orbitron';font-size:1.05rem;font-weight:700;cursor:pointer;transition:0.2s;}
+button:hover{background:var(--neon-blue);color:#000;box-shadow:0 0 28px var(--neon-blue);}
+</style>
+</head>
+<body>
+<div id="frame">
+<canvas id="c" width="600" height="480"></canvas>
+<div id="menu" class="panel"><h1>LIGHT CYCLES</h1><p class="sub">Steer your neon cycle with <b>arrow keys</b> or <b>WASD</b>. Don't hit the walls, your own trail, or the enemy's. First to <b>5</b> rounds wins.</p><button id="start">RIDE</button></div>
+<div id="over" class="panel hidden"><h1 id="ovt">MATCH OVER</h1><p class="sub" id="ovs"></p><button id="retry">PLAY AGAIN</button></div>
+</div>
+<script>
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
+const CELL=8,GW=75,GH=60;
+let AC=null;function beep(f,d=0.06,t="square",v=0.08){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
+let grid,p,e,sc1,sc2,state="menu",acc,dead,flash;
+function newRound(){grid=Array.from({length:GH},()=>new Int8Array(GW));p={x:12,y:GH/2|0,dx:1,dy:0,nd:null};e={x:GW-13,y:GH/2|0,dx:-1,dy:0};grid[p.y][p.x]=1;grid[e.y][e.x]=2;acc=0;dead=null;flash=0;}
+function reset(){sc1=0;sc2=0;newRound();}
+const free=(x,y)=>x>=0&&x<GW&&y>=0&&y<GH&&grid[y][x]===0;
+function flood(x,y){if(!free(x,y))return 0;const seen=new Set();const q=[[x,y]];seen.add(x+","+y);let n=0;while(q.length&&n<160){const[cx,cy]=q.pop();n++;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=cx+dx,ny=cy+dy,k=nx+","+ny;if(free(nx,ny)&&!seen.has(k)){seen.add(k);q.push([nx,ny]);}}}return n;}
+function cpuDir(){const opts=[[e.dx,e.dy],[e.dy,-e.dx],[-e.dy,e.dx]];let best=[e.dx,e.dy],bv=-1;for(const[dx,dy]of opts){const nx=e.x+dx,ny=e.y+dy;if(!free(nx,ny))continue;let v=flood(nx,ny)+Math.random()*4;// slight aggression: prefer heading toward player when safe
+ v-=Math.abs(nx-p.x)*0.02+Math.abs(ny-p.y)*0.02;if(v>bv){bv=v;best=[dx,dy];}}e.dx=best[0];e.dy=best[1];}
+function tick(){if(p.nd&&!(p.nd[0]===-p.dx&&p.nd[1]===-p.dy)){p.dx=p.nd[0];p.dy=p.nd[1];}p.nd=null;cpuDir();
+ const p2={x:p.x+p.dx,y:p.y+p.dy},e2={x:e.x+e.dx,y:e.y+e.dy};
+ const pDead=!free(p2.x,p2.y),eDead=!free(e2.x,e2.y)||(p2.x===e2.x&&p2.y===e2.y);
+ if(pDead||eDead){endRound(pDead,eDead);return;}
+ p.x=p2.x;p.y=p2.y;e.x=e2.x;e.y=e2.y;grid[p.y][p.x]=1;grid[e.y][e.x]=2;beep(900,0.012,"square",0.03);}
+function endRound(pDead,eDead){flash=0.4;beep(120,0.4,"sawtooth",0.16);
+ if(pDead&&eDead){}else if(pDead){sc2++;}else{sc1++;}
+ dead={pDead,eDead};
+ if(sc1>=5||sc2>=5){setTimeout(()=>{state="over";document.getElementById("ovt").textContent=sc1>sc2?"YOU WIN":"CPU WINS";document.getElementById("ovt").style.color=sc1>sc2?"#00ff88":"#ff3355";document.getElementById("ovs").textContent="Rounds "+sc1+" – "+sc2;document.getElementById("over").classList.remove("hidden");},700);state="wait";}
+ else{state="wait";setTimeout(()=>{newRound();state="play";},700);}}
+function draw(){ctx.fillStyle="#060912";ctx.fillRect(0,0,600,480);
+ ctx.strokeStyle="rgba(0,242,255,0.06)";for(let x=0;x<=GW;x+=5){ctx.beginPath();ctx.moveTo(x*CELL,0);ctx.lineTo(x*CELL,480);ctx.stroke();}for(let y=0;y<=GH;y+=5){ctx.beginPath();ctx.moveTo(0,y*CELL);ctx.lineTo(600,y*CELL);ctx.stroke();}
+ for(let y=0;y<GH;y++)for(let x=0;x<GW;x++){const v=grid[y][x];if(!v)continue;ctx.fillStyle=v===1?"#00f2ff":"#ff3df0";ctx.fillRect(x*CELL,y*CELL,CELL-1,CELL-1);}
+ // heads glow
+ head(p,"#aef9ff");head(e,"#ffcdf7");
+ if(flash>0){ctx.fillStyle="rgba(255,80,80,"+flash+")";ctx.fillRect(0,0,600,480);}
+ // score
+ ctx.fillStyle="#00f2ff";ctx.font="bold 16px Orbitron";ctx.fillText("YOU "+sc1,10,22);ctx.fillStyle="#ff3df0";ctx.textAlign="right";ctx.fillText(sc2+" CPU",590,22);ctx.textAlign="left";}
+function head(o,col){ctx.fillStyle=col;ctx.shadowBlur=10;ctx.shadowColor=col;ctx.fillRect(o.x*CELL-1,o.y*CELL-1,CELL+1,CELL+1);ctx.shadowBlur=0;}
+let last=0;function loop(ts){const dt=(ts-last)/1000;last=ts;if(flash>0)flash-=dt;if(state==="play"){acc+=dt;while(acc>=0.055){acc-=0.055;if(state==="play")tick();}}if(state!=="menu")draw();requestAnimationFrame(loop);}
+window.addEventListener("keydown",ev=>{const k=ev.key.toLowerCase();let d=null;if(k==="arrowup"||k==="w")d=[0,-1];else if(k==="arrowdown"||k==="s")d=[0,1];else if(k==="arrowleft"||k==="a")d=[-1,0];else if(k==="arrowright"||k==="d")d=[1,0];if(d){ev.preventDefault();p.nd=d;}});
+function start(){if(!AC)beep(440);reset();state="play";document.getElementById("menu").classList.add("hidden");document.getElementById("over").classList.add("hidden");}
+document.getElementById("start").onclick=start;document.getElementById("retry").onclick=start;
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

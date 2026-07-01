@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Missile Command</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root { --neon-blue:#00f2ff; --neon-pink:#ff00ff; --gold:#ffd700; --green:#00ff88; --red:#ff3355; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#000;color:var(--neon-blue);font-family:'Orbitron',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden;}
+#frame{position:relative;border:3px solid var(--neon-blue);border-radius:8px;box-shadow:0 0 35px rgba(0,242,255,0.4);background:#05060f;}
+canvas{display:block;cursor:crosshair;}
+.panel{position:absolute;inset:0;background:rgba(2,2,12,0.9);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border-radius:6px;z-index:5;padding:24px;}
+.panel.hidden{display:none;}
+h1{font-size:2.1rem;font-weight:900;font-style:italic;color:#fff;text-shadow:0 0 22px var(--neon-pink);margin-bottom:8px;}
+.sub{font-size:0.85rem;opacity:0.85;margin-bottom:18px;line-height:1.6;max-width:440px;}
+button{background:transparent;color:var(--neon-blue);border:2px solid var(--neon-blue);border-radius:10px;padding:12px 36px;font-family:'Orbitron';font-size:1.05rem;font-weight:700;cursor:pointer;transition:0.2s;}
+button:hover{background:var(--neon-blue);color:#000;box-shadow:0 0 28px var(--neon-blue);}
+</style>
+</head>
+<body>
+<div id="frame">
+<canvas id="c" width="640" height="470"></canvas>
+<div id="menu" class="panel"><h1>MISSILE COMMAND</h1><p class="sub"><b>Click</b> anywhere to fire an interceptor — its blast destroys any enemy missiles caught in it. Defend your six cities. Each wave falls faster and heavier.</p><button id="start">DEFEND</button></div>
+<div id="over" class="panel hidden"><h1 id="ovt">CITIES LOST</h1><p class="sub" id="ovs"></p><button id="retry">AGAIN</button></div>
+</div>
+<script>
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
+const W=640,H=470,GY=H-24;
+let AC=null;function beep(f,d=0.06,t="square",v=0.08){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
+let cities,incoming,ints,booms,score,wave,toSpawn,spawnT,state="menu",best=+(localStorage.getItem("missileBest")||0);
+const base={x:W/2,y:GY};
+function reset(){cities=[];const xs=[70,150,230,410,490,570];for(const x of xs)cities.push({x,alive:true});incoming=[];ints=[];booms=[];score=0;wave=0;startWave();}
+function startWave(){wave++;toSpawn=4+wave*2;spawnT=0.4;}
+function spawnMissile(){const alive=cities.filter(c=>c.alive);if(!alive.length)return;const tgt=alive[Math.random()*alive.length|0];const sx=Math.random()*W,sp=(46+wave*7)+Math.random()*30;const a=Math.atan2(GY-0,tgt.x-sx);incoming.push({x:sx,y:0,sx,sy:0,tx:tgt.x,ty:GY,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp});}
+function fire(x,y){ints.push({x:base.x,y:base.y,tx:x,ty:y});beep(720,0.05);}
+function update(dt){if(state!=="play")return;
+ if(toSpawn>0){spawnT-=dt;if(spawnT<=0){spawnMissile();toSpawn--;spawnT=Math.max(0.35,1.4-wave*0.06);}}
+ // interceptors
+ for(let i=ints.length-1;i>=0;i--){const m=ints[i];const dx=m.tx-m.x,dy=m.ty-m.y,d=Math.hypot(dx,dy),sp=420;if(d<sp*dt){booms.push({x:m.tx,y:m.ty,r:0,max:52,grow:1});ints.splice(i,1);beep(200,0.12,"sawtooth",0.1);}else{m.x+=dx/d*sp*dt;m.y+=dy/d*sp*dt;}}
+ // booms
+ for(let i=booms.length-1;i>=0;i--){const b=booms[i];if(b.grow>0){b.r+=180*dt;if(b.r>=b.max){b.grow=0;}}else{b.r-=120*dt;if(b.r<=0){booms.splice(i,1);continue;}}}
+ // incoming
+ for(let i=incoming.length-1;i>=0;i--){const m=incoming[i];m.x+=m.vx*dt;m.y+=m.vy*dt;
+  let killed=false;for(const b of booms)if(Math.hypot(m.x-b.x,m.y-b.y)<b.r){killed=true;break;}
+  if(killed){score+=25;booms.push({x:m.x,y:m.y,r:0,max:30,grow:1});incoming.splice(i,1);beep(900,0.05);continue;}
+  if(m.y>=GY){let near=null,nd=40;for(const c of cities)if(c.alive){const dd=Math.abs(c.x-m.x);if(dd<nd){nd=dd;near=c;}}if(near){near.alive=false;beep(90,0.4,"sawtooth",0.18);}booms.push({x:m.x,y:GY,r:0,max:38,grow:1});incoming.splice(i,1);}}
+ if(toSpawn===0&&incoming.length===0){score+=100+wave*20;startWave();}
+ if(!cities.some(c=>c.alive)){state="over";if(score>best){best=score;localStorage.setItem("missileBest",best);}document.getElementById("ovt").textContent="CITIES LOST";document.getElementById("ovs").textContent="Wave "+wave+" · Score "+score+" · Best "+best;document.getElementById("over").classList.remove("hidden");}}
+function draw(){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#0a0820");g.addColorStop(1,"#10121e");ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ ctx.fillStyle="#1a2a3a";ctx.fillRect(0,GY,W,H-GY);
+ // cities
+ for(const c of cities){if(c.alive){ctx.fillStyle="#00f2ff";ctx.shadowBlur=10;ctx.shadowColor="#00f2ff";ctx.fillRect(c.x-16,GY-16,10,16);ctx.fillRect(c.x-3,GY-24,8,24);ctx.fillRect(c.x+8,GY-12,10,12);ctx.shadowBlur=0;}else{ctx.fillStyle="#402020";ctx.fillRect(c.x-16,GY-6,34,6);}}
+ // base
+ ctx.fillStyle="#ffd700";ctx.beginPath();ctx.moveTo(base.x-18,GY);ctx.lineTo(base.x+18,GY);ctx.lineTo(base.x,GY-18);ctx.fill();
+ // incoming
+ for(const m of incoming){ctx.strokeStyle="rgba(255,80,120,0.5)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(m.sx,m.sy);ctx.lineTo(m.x,m.y);ctx.stroke();ctx.fillStyle="#ff3355";ctx.shadowBlur=8;ctx.shadowColor="#ff3355";ctx.beginPath();ctx.arc(m.x,m.y,3,0,7);ctx.fill();ctx.shadowBlur=0;}
+ // interceptors
+ for(const m of ints){ctx.strokeStyle="rgba(0,255,136,0.5)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(base.x,base.y);ctx.lineTo(m.x,m.y);ctx.stroke();ctx.fillStyle="#00ff88";ctx.beginPath();ctx.arc(m.x,m.y,3,0,7);ctx.fill();ctx.strokeStyle="rgba(255,255,255,0.3)";ctx.beginPath();ctx.arc(m.tx,m.ty,4,0,7);ctx.stroke();}
+ // booms
+ for(const b of booms){ctx.fillStyle="rgba(0,242,255,"+Math.min(0.5,b.r/b.max*0.5)+")";ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,7);ctx.fill();ctx.strokeStyle="#fff";ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,7);ctx.stroke();}
+ ctx.fillStyle="#ffd700";ctx.font="bold 16px Orbitron";ctx.fillText("★ "+score,12,24);
+ ctx.fillStyle="#00ff88";ctx.textAlign="right";ctx.fillText("WAVE "+wave,W-12,24);ctx.textAlign="left";}
+let last=0;function loop(ts){const dt=Math.min((ts-last)/1000,0.033);last=ts;update(dt);if(state!=="menu")draw();requestAnimationFrame(loop);}
+canvas.addEventListener("click",e=>{if(state!=="play")return;const r=canvas.getBoundingClientRect();fire((e.clientX-r.left)*(W/r.width),(e.clientY-r.top)*(H/r.height));});
+function start(){if(!AC)beep(440);reset();state="play";document.getElementById("menu").classList.add("hidden");document.getElementById("over").classList.add("hidden");}
+document.getElementById("start").onclick=start;document.getElementById("retry").onclick=start;
+if(best>0)document.querySelector("#menu .sub").innerHTML+="<br><b>Best: "+best+"</b>";
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Air Hockey</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root { --neon-blue:#00f2ff; --neon-pink:#ff00ff; --gold:#ffd700; --green:#00ff88; --red:#ff3355; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#000;color:var(--neon-blue);font-family:'Orbitron',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden;}
+#frame{position:relative;border:3px solid var(--neon-blue);border-radius:8px;box-shadow:0 0 35px rgba(0,242,255,0.4);background:#05060f;}
+canvas{display:block;cursor:none;}
+.panel{position:absolute;inset:0;background:rgba(2,2,12,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border-radius:6px;z-index:5;padding:24px;}
+.panel.hidden{display:none;}
+h1{font-size:2.1rem;font-weight:900;font-style:italic;color:#fff;text-shadow:0 0 22px var(--neon-pink);margin-bottom:8px;}
+.sub{font-size:0.85rem;opacity:0.85;margin-bottom:18px;line-height:1.6;max-width:400px;}
+button{background:transparent;color:var(--neon-blue);border:2px solid var(--neon-blue);border-radius:10px;padding:12px 36px;font-family:'Orbitron';font-size:1.05rem;font-weight:700;cursor:pointer;transition:0.2s;}
+button:hover{background:var(--neon-blue);color:#000;box-shadow:0 0 28px var(--neon-blue);}
+</style>
+</head>
+<body>
+<div id="frame">
+<canvas id="c" width="440" height="640"></canvas>
+<div id="menu" class="panel"><h1>AIR HOCKEY</h1><p class="sub">Move your mallet with the mouse. Slam the puck into the CPU's goal. First to <b>7</b> wins.</p><button id="start">PLAY</button></div>
+<div id="over" class="panel hidden"><h1 id="ovt">YOU WIN</h1><p class="sub" id="ovs"></p><button id="retry">REMATCH</button></div>
+</div>
+<script>
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
+const W=440,H=640,PR=28,KR=15,GW=150;
+let AC=null;function beep(f,d=0.06,t="square",v=0.08){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
+let puck,me,cpu,mvx,mvy,sc1,sc2,state="menu";
+function serve(dir){puck={x:W/2,y:H/2,vx:(Math.random()-0.5)*180,vy:dir*300,r:KR};}
+function reset(){me={x:W/2,y:H-90};cpu={x:W/2,y:90};mvx=0;mvy=0;sc1=0;sc2=0;serve(Math.random()<0.5?1:-1);}
+function clampPad(p,lo,hi){p.x=Math.max(PR,Math.min(W-PR,p.x));p.y=Math.max(lo,Math.min(hi,p.y));}
+function collide(pad,pvx,pvy){const dx=puck.x-pad.x,dy=puck.y-pad.y,d=Math.hypot(dx,dy);if(d<PR+KR){const nx=dx/(d||1),ny=dy/(d||1);puck.x=pad.x+nx*(PR+KR);puck.y=pad.y+ny*(PR+KR);const sp=Math.max(Math.hypot(puck.vx,puck.vy),360);puck.vx=nx*sp+pvx*24;puck.vy=ny*sp+pvy*24;beep(520,0.04);}}
+function goal(who){if(who===1)sc1++;else sc2++;beep(who===1?880:180,0.25,"sawtooth",0.14);if(sc1>=7||sc2>=7){state="over";document.getElementById("ovt").textContent=sc1>=7?"YOU WIN":"CPU WINS";document.getElementById("ovt").style.color=sc1>=7?"#00ff88":"#ff3355";document.getElementById("ovs").textContent="Final score "+sc1+" – "+sc2;document.getElementById("over").classList.remove("hidden");}else serve(who===1?-1:1);}
+function update(dt){if(state!=="play")return;
+ // cpu AI
+ let tx=W/2,ty=90;
+ if(puck.y<H/2+40){tx=puck.x+puck.vx*0.08;ty=Math.min(H/2-PR,puck.y-10);}
+ const sp=(puck.y<H*0.35?3.4:2.4);
+ cpu.x+=Math.max(-sp*60*dt*10,Math.min(sp*60*dt*10,(tx-cpu.x)))*0.18;
+ cpu.y+=(ty-cpu.y)*0.12;clampPad(cpu,PR,H/2-PR);
+ // puck physics
+ puck.x+=puck.vx*dt;puck.y+=puck.vy*dt;puck.vx*=0.999;puck.vy*=0.999;
+ const spd=Math.hypot(puck.vx,puck.vy);if(spd>620){puck.vx*=620/spd;puck.vy*=620/spd;}
+ if(puck.x<KR){puck.x=KR;puck.vx=Math.abs(puck.vx);beep(300,0.03);}
+ if(puck.x>W-KR){puck.x=W-KR;puck.vx=-Math.abs(puck.vx);beep(300,0.03);}
+ const inGoal=Math.abs(puck.x-W/2)<GW/2;
+ if(puck.y<KR){if(inGoal){goal(1);return;}puck.y=KR;puck.vy=Math.abs(puck.vy);beep(300,0.03);}
+ if(puck.y>H-KR){if(inGoal){goal(2);return;}puck.y=H-KR;puck.vy=-Math.abs(puck.vy);beep(300,0.03);}
+ collide(me,mvx,mvy);collide(cpu,(cpu.x-cpu.px||0),(cpu.y-cpu.py||0));
+ cpu.px=cpu.x;cpu.py=cpu.y;mvx*=0.6;mvy*=0.6;}
+function draw(){
+ ctx.fillStyle="#071018";ctx.fillRect(0,0,W,H);
+ ctx.strokeStyle="rgba(0,242,255,0.35)";ctx.lineWidth=2;
+ ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();
+ ctx.beginPath();ctx.arc(W/2,H/2,60,0,7);ctx.stroke();
+ ctx.strokeStyle="rgba(255,0,255,0.5)";ctx.lineWidth=5;
+ ctx.beginPath();ctx.moveTo(W/2-GW/2,2);ctx.lineTo(W/2+GW/2,2);ctx.stroke();
+ ctx.strokeStyle="rgba(0,255,136,0.5)";ctx.beginPath();ctx.moveTo(W/2-GW/2,H-2);ctx.lineTo(W/2+GW/2,H-2);ctx.stroke();
+ // score
+ ctx.fillStyle="rgba(255,255,255,0.12)";ctx.font="900 90px Orbitron";ctx.textAlign="center";
+ ctx.fillText(sc2,W/2,H/2-30);ctx.fillText(sc1,W/2,H/2+110);ctx.textAlign="left";
+ // paddles + puck
+ drawPad(cpu,"#ff3df0");drawPad(me,"#00ff88");
+ ctx.fillStyle="#fff";ctx.shadowBlur=14;ctx.shadowColor="#00f2ff";ctx.beginPath();ctx.arc(puck.x,puck.y,KR,0,7);ctx.fill();ctx.shadowBlur=0;}
+function drawPad(p,col){ctx.fillStyle="#111";ctx.beginPath();ctx.arc(p.x,p.y,PR,0,7);ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=4;ctx.shadowBlur=12;ctx.shadowColor=col;ctx.stroke();ctx.beginPath();ctx.arc(p.x,p.y,PR-9,0,7);ctx.stroke();ctx.shadowBlur=0;}
+let last=0;function loop(ts){const dt=Math.min((ts-last)/1000,0.033);last=ts;update(dt);if(state!=="menu")draw();requestAnimationFrame(loop);}
+canvas.addEventListener("mousemove",e=>{const r=canvas.getBoundingClientRect();const x=(e.clientX-r.left)*(W/r.width),y=(e.clientY-r.top)*(H/r.height);if(me){mvx=x-me.x;mvy=y-me.y;me.x=x;me.y=y;clampPad(me,H/2+PR,H-PR);}});
+function start(){if(!AC)beep(440);reset();state="play";document.getElementById("menu").classList.add("hidden");document.getElementById("over").classList.add("hidden");}
+document.getElementById("start").onclick=start;document.getElementById("retry").onclick=start;
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

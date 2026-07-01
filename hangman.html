@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Hangman</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root { --neon-blue:#00f2ff; --neon-pink:#ff00ff; --gold:#ffd700; --green:#00ff88; --red:#ff3355; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#05060f;color:var(--neon-blue);font-family:'Orbitron',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;user-select:none;}
+#frame{position:relative;border:3px solid var(--neon-blue);border-radius:8px;box-shadow:0 0 35px rgba(0,242,255,0.4);background:#05060f;padding:16px;width:420px;}
+canvas{display:block;margin:0 auto;background:#0a0e18;border-radius:6px;}
+#hint{text-align:center;margin:10px 0 4px;font-size:.8rem;color:#9bd;}
+#hint b{color:var(--gold);}
+#word{text-align:center;font-size:2rem;font-weight:700;letter-spacing:10px;margin:8px 0;color:#fff;min-height:44px;text-shadow:0 0 12px var(--neon-blue);}
+#kb{display:grid;grid-template-columns:repeat(9,1fr);gap:5px;margin-top:8px;}
+.key{padding:11px 0;border-radius:6px;background:#22304a;color:#dfe;border:none;font-family:'Orbitron';font-weight:700;font-size:.85rem;cursor:pointer;}
+.key:disabled{opacity:.3;cursor:default;}
+.key.good{background:var(--green);color:#022;}
+.key.bad{background:var(--red);color:#fff;}
+#msg{text-align:center;height:24px;margin-top:10px;font-weight:700;letter-spacing:1px;}
+#new{display:block;margin:8px auto 0;background:transparent;color:var(--neon-blue);border:2px solid var(--neon-blue);border-radius:8px;padding:8px 22px;font-family:'Orbitron';font-weight:700;cursor:pointer;}
+#new:hover{background:var(--neon-blue);color:#000;}
+</style>
+</head>
+<body>
+<div id="frame">
+<canvas id="c" width="260" height="220"></canvas>
+<div id="hint">Category: <b id="cat"></b></div>
+<div id="word"></div>
+<div id="kb"></div>
+<div id="msg"></div>
+<button id="new">NEW WORD</button>
+</div>
+<script>
+const ctx=document.getElementById("c").getContext("2d");
+let AC=null;function beep(f,d=0.07,t="square",v=0.08){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
+const BANK=[
+ {c:"Animals",w:["ELEPHANT","GIRAFFE","DOLPHIN","PENGUIN","KANGAROO","LEOPARD","OCTOPUS","HEDGEHOG","FLAMINGO","CHEETAH","TORTOISE","SQUIRREL"]},
+ {c:"Countries",w:["PORTUGAL","THAILAND","MOROCCO","ICELAND","BRAZIL","CANADA","VIETNAM","NIGERIA","BELGIUM","MEXICO","FINLAND","JAMAICA"]},
+ {c:"Food",w:["SPAGHETTI","PANCAKE","AVOCADO","BROCCOLI","CINNAMON","PINEAPPLE","SANDWICH","CHOCOLATE","LASAGNE","POPCORN","OMELETTE","BURRITO"]},
+ {c:"Space",w:["GALAXY","NEBULA","ASTEROID","METEOR","SATELLITE","GRAVITY","ECLIPSE","COMET","ORBIT","TELESCOPE","SUPERNOVA","COSMOS"]},
+ {c:"Sports",w:["BASKETBALL","CRICKET","SWIMMING","MARATHON","CYCLING","BOXING","SKATING","VOLLEYBALL","ARCHERY","SURFING","ROWING","FENCING"]}
+];
+let word,cat,guessed,wrong,over;
+function draw(){ctx.clearRect(0,0,260,220);ctx.strokeStyle="#3a4a66";ctx.lineWidth=5;ctx.lineCap="round";
+ // gallows
+ ctx.beginPath();ctx.moveTo(20,205);ctx.lineTo(120,205);ctx.moveTo(50,205);ctx.lineTo(50,25);ctx.lineTo(160,25);ctx.lineTo(160,50);ctx.stroke();
+ ctx.strokeStyle="#00f2ff";ctx.shadowBlur=8;ctx.shadowColor="#00f2ff";
+ const p=[];
+ p.push(()=>{ctx.beginPath();ctx.arc(160,68,18,0,7);ctx.stroke();});// head
+ p.push(()=>{ctx.beginPath();ctx.moveTo(160,86);ctx.lineTo(160,140);ctx.stroke();});// body
+ p.push(()=>{ctx.beginPath();ctx.moveTo(160,100);ctx.lineTo(135,120);ctx.stroke();});// arm
+ p.push(()=>{ctx.beginPath();ctx.moveTo(160,100);ctx.lineTo(185,120);ctx.stroke();});// arm
+ p.push(()=>{ctx.beginPath();ctx.moveTo(160,140);ctx.lineTo(140,175);ctx.stroke();});// leg
+ p.push(()=>{ctx.beginPath();ctx.moveTo(160,140);ctx.lineTo(180,175);ctx.stroke();});// leg
+ for(let i=0;i<wrong&&i<6;i++){if(i>=1)ctx.strokeStyle="#ff3355",ctx.shadowColor="#ff3355";p[i]();}
+ ctx.shadowBlur=0;}
+function showWord(){document.getElementById("word").textContent=word.split("").map(ch=>guessed.has(ch)?ch:"_").join(" ");}
+function newGame(){const g=BANK[Math.random()*BANK.length|0];cat=g.c;word=g.w[Math.random()*g.w.length|0];guessed=new Set();wrong=0;over=false;
+ document.getElementById("cat").textContent=cat;document.getElementById("msg").textContent="";buildKb();showWord();draw();}
+function buildKb(){const kb=document.getElementById("kb");kb.innerHTML="";for(let i=65;i<=90;i++){const ch=String.fromCharCode(i);const b=document.createElement("button");b.className="key";b.textContent=ch;b.id="k"+ch;b.onclick=()=>pick(ch);kb.appendChild(b);}}
+function pick(ch){if(over||guessed.has(ch))return;if(!AC)beep(440);guessed.add(ch);const btn=document.getElementById("k"+ch);btn.disabled=true;
+ if(word.includes(ch)){btn.classList.add("good");beep(660,0.06);showWord();if(word.split("").every(c=>guessed.has(c))){over=true;win();}}
+ else{btn.classList.add("bad");wrong++;beep(200,0.1);draw();if(wrong>=6){over=true;lose();}}}
+function win(){const m=document.getElementById("msg");m.textContent="YOU GOT IT! 🎉";m.style.color="#00ff88";beep(880,0.15);beep(1100,0.18);}
+function lose(){const m=document.getElementById("msg");m.textContent="GAME OVER — "+word;m.style.color="#ff3355";for(const c of word)guessed.add(c);showWord();beep(150,0.35,"sawtooth",0.14);}
+window.addEventListener("keydown",e=>{if(/^[a-zA-Z]$/.test(e.key))pick(e.key.toUpperCase());});
+document.getElementById("new").onclick=newGame;
+newGame();
+</script>
+</body>
+</html>

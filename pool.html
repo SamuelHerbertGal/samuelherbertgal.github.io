@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>8-Ball Pool</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root { --neon-blue:#00f2ff; --neon-pink:#ff00ff; --gold:#ffd700; --green:#00ff88; --red:#ff3355; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#000;color:var(--neon-blue);font-family:'Orbitron',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden;}
+#frame{position:relative;border:3px solid var(--neon-blue);border-radius:8px;box-shadow:0 0 35px rgba(0,242,255,0.4);background:#05060f;}
+canvas{display:block;cursor:crosshair;}
+.panel{position:absolute;inset:0;background:rgba(2,2,12,0.9);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border-radius:6px;z-index:5;padding:24px;}
+.panel.hidden{display:none;}
+h1{font-size:2.1rem;font-weight:900;font-style:italic;color:#fff;text-shadow:0 0 22px var(--neon-pink);margin-bottom:8px;}
+.sub{font-size:0.85rem;opacity:0.85;margin-bottom:18px;line-height:1.6;max-width:440px;}
+button{background:transparent;color:var(--neon-blue);border:2px solid var(--neon-blue);border-radius:10px;padding:12px 36px;font-family:'Orbitron';font-size:1.05rem;font-weight:700;cursor:pointer;transition:0.2s;}
+button:hover{background:var(--neon-blue);color:#000;box-shadow:0 0 28px var(--neon-blue);}
+</style>
+</head>
+<body>
+<div id="frame">
+<canvas id="c" width="640" height="360"></canvas>
+<div id="menu" class="panel"><h1>8-BALL POOL</h1><p class="sub">Drag back from the <b>white cue ball</b> and release to shoot — the farther you pull, the harder the strike. Sink all the coloured balls in as few shots as possible. Don't pot the cue!</p><button id="start">BREAK</button></div>
+<div id="over" class="panel hidden"><h1 id="ovt">TABLE CLEARED</h1><p class="sub" id="ovs"></p><button id="retry">RACK AGAIN</button></div>
+</div>
+<script>
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
+const W=640,H=360,R=10,M=26;
+let AC=null;function beep(f,d=0.06,t="square",v=0.07){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
+const COLS=["#ffd700","#3366ff","#ff3355","#b06bff","#ff8c00","#00cc66","#cc2222","#111","#ffd700","#3366ff","#ff3355","#b06bff","#ff8c00","#00cc66","#cc2222"];
+const POCKETS=[[M,M],[W/2,M-4],[W-M,M],[M,H-M],[W/2,H-M+4],[W-M,H-M]];
+const PR=17;
+let balls,cue,strokes,potted,state="menu",drag=null,mouse={x:0,y:0};
+function rack(){balls=[];const startX=W*0.68,startY=H/2;let k=0;for(let col=0;col<5;col++)for(let row=0;row<=col;row++){const x=startX+col*(R*1.9);const y=startY-(col*(R*1.05))+row*(R*2.1);balls.push({x,y,vx:0,vy:0,col:COLS[k++],live:true});}}
+function reset(){cue={x:W*0.28,y:H/2,vx:0,vy:0,live:true,cue:true};rack();strokes=0;potted=0;drag=null;}
+function moving(){return Math.abs(cue.vx)>2||Math.abs(cue.vy)>2||balls.some(b=>b.live&&(Math.abs(b.vx)>2||Math.abs(b.vy)>2));}
+function all(){return [cue,...balls];}
+function step(dt){for(const b of all()){if(!b.live)continue;b.x+=b.vx*dt;b.y+=b.vy*dt;const f=Math.pow(0.35,dt);b.vx*=f;b.vy*=f;if(Math.hypot(b.vx,b.vy)<2){b.vx=0;b.vy=0;}
+  if(b.x<M+R){b.x=M+R;b.vx=Math.abs(b.vx);beep(200,0.03);}if(b.x>W-M-R){b.x=W-M-R;b.vx=-Math.abs(b.vx);beep(200,0.03);}
+  if(b.y<M+R){b.y=M+R;b.vy=Math.abs(b.vy);}if(b.y>H-M-R){b.y=H-M-R;b.vy=-Math.abs(b.vy);}}
+ // collisions
+ const arr=all().filter(b=>b.live);
+ for(let i=0;i<arr.length;i++)for(let j=i+1;j<arr.length;j++){const a=arr[i],b=arr[j];const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy);if(d>0&&d<2*R){const nx=dx/d,ny=dy/d;const ov=2*R-d;a.x-=nx*ov/2;a.y-=ny*ov/2;b.x+=nx*ov/2;b.y+=ny*ov/2;const dvx=b.vx-a.vx,dvy=b.vy-a.vy,p=dvx*nx+dvy*ny;if(p<0){a.vx+=p*nx;a.vy+=p*ny;b.vx-=p*nx;b.vy-=p*ny;beep(420,0.03);}}}
+ // pockets
+ for(const b of arr){for(const[px,py]of POCKETS){if(Math.hypot(b.x-px,b.y-py)<PR){b.live=false;b.vx=b.vy=0;if(b.cue){beep(120,0.3,"sawtooth",0.14);}else{potted++;beep(880,0.1);}break;}}}
+ // resolve turn end
+ if(!moving()&&drag==="await"){drag=null;if(!cue.live){cue.live=true;cue.x=W*0.28;cue.y=H/2;cue.vx=cue.vy=0;// place if overlapping
+   while(all().some(o=>o!==cue&&o.live&&Math.hypot(o.x-cue.x,o.y-cue.y)<2*R))cue.x+=6;}
+  if(balls.every(b=>!b.live)){state="over";document.getElementById("ovs").textContent="You cleared the table in "+strokes+" shots.";document.getElementById("over").classList.remove("hidden");}}}
+function draw(){ctx.fillStyle="#3a2a1a";ctx.fillRect(0,0,W,H);ctx.fillStyle="#0a5a3a";ctx.fillRect(M-6,M-6,W-2*M+12,H-2*M+12);ctx.fillStyle="#0d6e48";ctx.fillRect(M,M,W-2*M,H-2*M);
+ for(const[px,py]of POCKETS){ctx.fillStyle="#000";ctx.beginPath();ctx.arc(px,py,PR,0,7);ctx.fill();}
+ for(const b of balls){if(!b.live)continue;drawBall(b);}
+ if(cue.live){drawBall(cue);}
+ // aim
+ if(drag&&drag!=="await"&&cue.live&&!moving()){const dx=cue.x-mouse.x,dy=cue.y-mouse.y,d=Math.hypot(dx,dy),pw=Math.min(d,150);const a=Math.atan2(dy,dx);ctx.strokeStyle="rgba(255,255,255,0.5)";ctx.setLineDash([6,6]);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(cue.x,cue.y);ctx.lineTo(cue.x+Math.cos(a)*(pw*2.2),cue.y+Math.sin(a)*(pw*2.2));ctx.stroke();ctx.setLineDash([]);
+  ctx.strokeStyle="#ffd700";ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(cue.x,cue.y);ctx.lineTo(mouse.x,mouse.y);ctx.stroke();ctx.fillStyle="#ffd700";ctx.font="bold 12px Orbitron";ctx.fillText("Power "+Math.round(pw/150*100)+"%",cue.x+10,cue.y-14);}
+ ctx.fillStyle="#fff";ctx.font="bold 15px Orbitron";ctx.fillText("SHOTS "+strokes,12,20);ctx.textAlign="right";ctx.fillText("SUNK "+potted+"/15",W-12,20);ctx.textAlign="left";}
+function drawBall(b){ctx.fillStyle=b.cue?"#fff":b.col;ctx.shadowBlur=8;ctx.shadowColor=b.cue?"#fff":b.col;ctx.beginPath();ctx.arc(b.x,b.y,R,0,7);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle="rgba(255,255,255,0.5)";ctx.beginPath();ctx.arc(b.x-3,b.y-3,3,0,7);ctx.fill();}
+let last=0;function loop(ts){const dt=Math.min((ts-last)/1000,0.033);last=ts;if(state==="play")step(dt);if(state!=="menu")draw();requestAnimationFrame(loop);}
+function pos(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*(W/r.width),y:(e.clientY-r.top)*(H/r.height)};}
+canvas.addEventListener("mousedown",e=>{if(state!=="play"||moving()||!cue.live)return;const p=pos(e);mouse=p;drag=true;});
+canvas.addEventListener("mousemove",e=>{mouse=pos(e);});
+window.addEventListener("mouseup",()=>{if(drag===true&&cue.live){const dx=cue.x-mouse.x,dy=cue.y-mouse.y,d=Math.hypot(dx,dy);if(d>6){const pw=Math.min(d,150)*7.5;const a=Math.atan2(dy,dx);cue.vx=Math.cos(a)*pw;cue.vy=Math.sin(a)*pw;strokes++;beep(320,0.08);drag="await";}else drag=null;}});
+function start(){if(!AC)beep(440);reset();state="play";document.getElementById("menu").classList.add("hidden");document.getElementById("over").classList.add("hidden");}
+document.getElementById("start").onclick=start;document.getElementById("retry").onclick=start;
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
