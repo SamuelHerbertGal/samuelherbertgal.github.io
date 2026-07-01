@@ -47,19 +47,20 @@ function cellsFor(r,c,len,o){const cells=[];for(let i=0;i<len;i++)cells.push(o==
 function valid(grid,cells){return cells.every(([r,c])=>r>=0&&r<N&&c>=0&&c<N&&grid.occ[r][c]===-1);}
 function place(grid,cells){const id=grid.ships.length;grid.ships.push({cells,hits:0,len:cells.length});for(const[r,c]of cells)grid.occ[r][c]=id;}
 function randomize(grid){grid.ships=[];for(let r=0;r<N;r++)grid.occ[r].fill(-1);for(const len of SIZES){let ok=false,t=0;while(!ok&&t++<500){const o=Math.random()<0.5?"h":"v";const r=Math.random()*N|0,c=Math.random()*N|0;const cells=cellsFor(r,c,len,o);if(valid(grid,cells)){place(grid,cells);ok=true;}}}}
-function reset(){pGrid=newGrid();eGrid=newGrid();randomize(eGrid);phase="place";queue=SIZES.slice();orient="h";hoverRC=null;turn="p";msg="Place your "+queue[0]+"-cell ship. R to rotate.";ai={mode:"hunt",stack:[],lastHits:[]};document.getElementById("ready").disabled=true;}
+function reset(){pGrid=newGrid();eGrid=newGrid();randomize(eGrid);phase="place";queue=SIZES.slice();orient="h";hoverRC=null;turn="p";msg="Place your "+queue[0]+"-cell ship. R to rotate.";ai={stack:[],hits:[]};document.getElementById("ready").disabled=true;}
 function cellAt(mx,my,gx){const c=Math.floor((mx-gx)/CS),r=Math.floor((my-GY)/CS);if(c<0||c>=N||r<0||r>=N)return null;return[r,c];}
 function playerFire(r,c){if(eGrid.shot[r][c])return;const res=fireInto(eGrid,r,c);if(res==="hit"||res==="sunk"){beep(880,0.08);msg=res==="sunk"?"Enemy ship sunk!":"Direct hit!";if(eGrid.ships.every(s=>s.hits>=s.len)){endGame(true);return;}}else{beep(200,0.08);msg="Miss. Enemy fires…";turn="e";setTimeout(aiTurn,650);}}
 function fireInto(grid,r,c){grid.shot[r][c]=grid.occ[r][c]>=0?2:1;if(grid.occ[r][c]>=0){const s=grid.ships[grid.occ[r][c]];s.hits++;return s.hits>=s.len?"sunk":"hit";}return"miss";}
+function computeStack(){ai.stack=[];const h=ai.hits;const add=(r,c)=>{if(r>=0&&r<N&&c>=0&&c<N&&!pGrid.shot[r][c])ai.stack.push([r,c]);};
+ if(h.length>=2){const sameRow=h.every(p=>p[0]===h[0][0]);if(sameRow){const row=h[0][0],cs=h.map(p=>p[1]);add(row,Math.min(...cs)-1);add(row,Math.max(...cs)+1);}else{const col=h[0][1],rs=h.map(p=>p[0]);add(Math.min(...rs)-1,col);add(Math.max(...rs)+1,col);}}
+ else{const[r,c]=h[0];add(r+1,c);add(r-1,c);add(r,c+1);add(r,c-1);}}
 function aiTurn(){if(state!=="play")return;let r,c;
- if(ai.stack.length){[r,c]=ai.stack.pop();while(ai.stack.length&&pGrid.shot[r][c]) [r,c]=ai.stack.pop();}
- else{do{r=Math.random()*N|0;c=Math.random()*N|0;}while(pGrid.shot[r][c]||((r+c)%2!==0&&Math.random()<0.7));}
- if(pGrid.shot[r][c]){setTimeout(aiTurn,120);return;}
+ if(ai.stack.length){const t=ai.stack.pop();r=t[0];c=t[1];if(pGrid.shot[r][c]){setTimeout(aiTurn,60);return;}}
+ else{let tries=0;do{r=Math.random()*N|0;c=Math.random()*N|0;tries++;}while((pGrid.shot[r][c]||(r+c)%2!==0)&&tries<300);while(pGrid.shot[r][c]){r=Math.random()*N|0;c=Math.random()*N|0;}}
  const res=fireInto(pGrid,r,c);
- if(res==="hit"||res==="sunk"){beep(300,0.1,"sawtooth",0.1);for(const[dr,dc]of[[1,0],[-1,0],[0,1],[0,-1]]){const nr=r+dr,nc=c+dc;if(nr>=0&&nr<N&&nc>=0&&nc<N&&!pGrid.shot[nr][nc])ai.stack.push([nr,nc]);}
-  if(pGrid.ships.every(s=>s.hits>=s.len)){endGame(false);return;}
-  msg="Enemy hit your fleet! It fires again…";setTimeout(aiTurn,650);}
- else{beep(160,0.08);msg="Enemy missed. Your move.";turn="p";}}
+ if(res==="sunk"){beep(300,0.12,"sawtooth",0.1);ai.hits=[];ai.stack=[];if(pGrid.ships.every(s=>s.hits>=s.len)){endGame(false);return;}msg="Enemy sank one of your ships!";setTimeout(aiTurn,650);return;}
+ if(res==="hit"){beep(300,0.1,"sawtooth",0.1);ai.hits.push([r,c]);computeStack();if(pGrid.ships.every(s=>s.hits>=s.len)){endGame(false);return;}msg="Enemy hit your fleet! It fires again…";setTimeout(aiTurn,650);return;}
+ beep(160,0.08);msg="Enemy missed. Your move.";turn="p";}
 function endGame(win){state="over";document.getElementById("ovt").textContent=win?"VICTORY":"DEFEATED";document.getElementById("ovt").style.color=win?"#00ff88":"#ff3355";document.getElementById("ovs").textContent=win?"You sank the entire enemy fleet!":"Your fleet was destroyed.";document.getElementById("over").classList.remove("hidden");beep(win?880:120,0.3,"sawtooth",0.14);}
 function drawGrid(gx,grid,reveal,ghost){ctx.strokeStyle="rgba(0,242,255,0.25)";ctx.lineWidth=1;
  for(let r=0;r<N;r++)for(let c=0;c<N;c++){const x=gx+c*CS,y=GY+r*CS;ctx.fillStyle="#0b1424";ctx.fillRect(x,y,CS-1,CS-1);}
@@ -72,6 +73,8 @@ function drawGrid(gx,grid,reveal,ghost){ctx.strokeStyle="rgba(0,242,255,0.25)";c
  ctx.strokeStyle="rgba(0,242,255,0.4)";ctx.strokeRect(gx,GY,N*CS,N*CS);}
 function draw(){ctx.fillStyle="#070a12";ctx.fillRect(0,0,620,380);
  ctx.fillStyle="#9bd";ctx.font="bold 13px Orbitron";ctx.fillText("YOUR FLEET",GX1,32);ctx.fillText("ENEMY WATERS",GX2,32);
+ const pAlive=pGrid.ships.filter(s=>s.hits<s.len).length,eAlive=eGrid.ships.filter(s=>s.hits<s.len).length;
+ ctx.font="11px Orbitron";ctx.fillStyle="#00ff88";ctx.fillText("⚓ "+pAlive+"/5",GX1+150,32);ctx.fillStyle="#ff3355";ctx.fillText("⚓ "+eAlive+"/5",GX2+170,32);
  let ghost=null;if(phase==="place"&&hoverRC&&queue.length)ghost=cellsFor(hoverRC[0],hoverRC[1],queue[0],orient);
  drawGrid(GX1,pGrid,true,ghost);drawGrid(GX2,eGrid,false,null);
  ctx.fillStyle="#ffd700";ctx.font="bold 12px Orbitron";ctx.textAlign="center";ctx.fillText(msg,310,372);ctx.textAlign="left";}

@@ -29,21 +29,22 @@ button:hover{background:var(--neon-blue);color:#000;box-shadow:0 0 28px var(--ne
 const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
 const W=440,H=640,PR=28,KR=15,GW=150;
 let AC=null;function beep(f,d=0.06,t="square",v=0.08){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
-let puck,me,cpu,mvx,mvy,sc1,sc2,state="menu";
+let puck,me,cpu,mvx,mvy,sc1,sc2,state="menu",trail=[],shake=0,flash=0;
 function serve(dir){puck={x:W/2,y:H/2,vx:(Math.random()-0.5)*180,vy:dir*300,r:KR};}
-function reset(){me={x:W/2,y:H-90};cpu={x:W/2,y:90};mvx=0;mvy=0;sc1=0;sc2=0;serve(Math.random()<0.5?1:-1);}
+function reset(){me={x:W/2,y:H-90};cpu={x:W/2,y:90};mvx=0;mvy=0;sc1=0;sc2=0;trail=[];shake=0;flash=0;serve(Math.random()<0.5?1:-1);}
 function clampPad(p,lo,hi){p.x=Math.max(PR,Math.min(W-PR,p.x));p.y=Math.max(lo,Math.min(hi,p.y));}
 function collide(pad,pvx,pvy){const dx=puck.x-pad.x,dy=puck.y-pad.y,d=Math.hypot(dx,dy);if(d<PR+KR){const nx=dx/(d||1),ny=dy/(d||1);puck.x=pad.x+nx*(PR+KR);puck.y=pad.y+ny*(PR+KR);const sp=Math.max(Math.hypot(puck.vx,puck.vy),360);puck.vx=nx*sp+pvx*24;puck.vy=ny*sp+pvy*24;beep(520,0.04);}}
-function goal(who){if(who===1)sc1++;else sc2++;beep(who===1?880:180,0.25,"sawtooth",0.14);if(sc1>=7||sc2>=7){state="over";document.getElementById("ovt").textContent=sc1>=7?"YOU WIN":"CPU WINS";document.getElementById("ovt").style.color=sc1>=7?"#00ff88":"#ff3355";document.getElementById("ovs").textContent="Final score "+sc1+" – "+sc2;document.getElementById("over").classList.remove("hidden");}else serve(who===1?-1:1);}
+function goal(who){shake=14;flash=0.5;if(who===1)sc1++;else sc2++;beep(who===1?880:180,0.25,"sawtooth",0.14);if(sc1>=7||sc2>=7){state="over";document.getElementById("ovt").textContent=sc1>=7?"YOU WIN":"CPU WINS";document.getElementById("ovt").style.color=sc1>=7?"#00ff88":"#ff3355";document.getElementById("ovs").textContent="Final score "+sc1+" – "+sc2;document.getElementById("over").classList.remove("hidden");}else serve(who===1?-1:1);}
 function update(dt){if(state!=="play")return;
- // cpu AI
- let tx=W/2,ty=90;
- if(puck.y<H/2+40){tx=puck.x+puck.vx*0.08;ty=Math.min(H/2-PR,puck.y-10);}
- const sp=(puck.y<H*0.35?3.4:2.4);
- cpu.x+=Math.max(-sp*60*dt*10,Math.min(sp*60*dt*10,(tx-cpu.x)))*0.18;
- cpu.y+=(ty-cpu.y)*0.12;clampPad(cpu,PR,H/2-PR);
+ // predictive cpu AI (sharpens as the match tightens)
+ let tx=W/2,ty=90;const skill=0.10+Math.min(sc1,sc2)*0.01;
+ if(puck.vy<0){const tt=Math.min(1.4,(puck.y-90)/(Math.abs(puck.vy)||1));tx=puck.x+puck.vx*tt;tx=Math.max(KR,Math.min(W-KR,tx));ty=Math.max(PR,Math.min(H/2-PR,puck.y-6));}
+ else{tx=W/2+(puck.x-W/2)*0.3;ty=90;}
+ cpu.x+=(tx-cpu.x)*(0.10+skill);cpu.y+=(ty-cpu.y)*0.12;clampPad(cpu,PR,H/2-PR);
+ if(shake>0)shake-=dt*30;if(flash>0)flash-=dt*1.5;
  // puck physics
  puck.x+=puck.vx*dt;puck.y+=puck.vy*dt;puck.vx*=0.999;puck.vy*=0.999;
+ trail.push({x:puck.x,y:puck.y});if(trail.length>12)trail.shift();
  const spd=Math.hypot(puck.vx,puck.vy);if(spd>620){puck.vx*=620/spd;puck.vy*=620/spd;}
  if(puck.x<KR){puck.x=KR;puck.vx=Math.abs(puck.vx);beep(300,0.03);}
  if(puck.x>W-KR){puck.x=W-KR;puck.vx=-Math.abs(puck.vx);beep(300,0.03);}
@@ -53,7 +54,9 @@ function update(dt){if(state!=="play")return;
  collide(me,mvx,mvy);collide(cpu,(cpu.x-cpu.px||0),(cpu.y-cpu.py||0));
  cpu.px=cpu.x;cpu.py=cpu.y;mvx*=0.6;mvy*=0.6;}
 function draw(){
+ ctx.save();if(shake>0)ctx.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake);
  ctx.fillStyle="#071018";ctx.fillRect(0,0,W,H);
+ for(let i=0;i<trail.length;i++){const tp=trail[i];ctx.globalAlpha=i/trail.length*0.4;ctx.fillStyle="#00f2ff";ctx.beginPath();ctx.arc(tp.x,tp.y,KR*(i/trail.length),0,7);ctx.fill();}ctx.globalAlpha=1;
  ctx.strokeStyle="rgba(0,242,255,0.35)";ctx.lineWidth=2;
  ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();
  ctx.beginPath();ctx.arc(W/2,H/2,60,0,7);ctx.stroke();
@@ -65,7 +68,9 @@ function draw(){
  ctx.fillText(sc2,W/2,H/2-30);ctx.fillText(sc1,W/2,H/2+110);ctx.textAlign="left";
  // paddles + puck
  drawPad(cpu,"#ff3df0");drawPad(me,"#00ff88");
- ctx.fillStyle="#fff";ctx.shadowBlur=14;ctx.shadowColor="#00f2ff";ctx.beginPath();ctx.arc(puck.x,puck.y,KR,0,7);ctx.fill();ctx.shadowBlur=0;}
+ ctx.fillStyle="#fff";ctx.shadowBlur=14;ctx.shadowColor="#00f2ff";ctx.beginPath();ctx.arc(puck.x,puck.y,KR,0,7);ctx.fill();ctx.shadowBlur=0;
+ if(flash>0){ctx.fillStyle="rgba(255,255,255,"+flash*0.5+")";ctx.fillRect(0,0,W,H);}
+ ctx.restore();}
 function drawPad(p,col){ctx.fillStyle="#111";ctx.beginPath();ctx.arc(p.x,p.y,PR,0,7);ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=4;ctx.shadowBlur=12;ctx.shadowColor=col;ctx.stroke();ctx.beginPath();ctx.arc(p.x,p.y,PR-9,0,7);ctx.stroke();ctx.shadowBlur=0;}
 let last=0;function loop(ts){const dt=Math.min((ts-last)/1000,0.033);last=ts;update(dt);if(state!=="menu")draw();requestAnimationFrame(loop);}
 canvas.addEventListener("mousemove",e=>{const r=canvas.getBoundingClientRect();const x=(e.clientX-r.left)*(W/r.width),y=(e.clientY-r.top)*(H/r.height);if(me){mvx=x-me.x;mvy=y-me.y;me.x=x;me.y=y;clampPad(me,H/2+PR,H-PR);}});

@@ -20,8 +20,12 @@ canvas{display:block;margin:0 auto;background:#0a0e18;border-radius:6px;}
 .key.good{background:var(--green);color:#022;}
 .key.bad{background:var(--red);color:#fff;}
 #msg{text-align:center;height:24px;margin-top:10px;font-weight:700;letter-spacing:1px;}
-#new{display:block;margin:8px auto 0;background:transparent;color:var(--neon-blue);border:2px solid var(--neon-blue);border-radius:8px;padding:8px 22px;font-family:'Orbitron';font-weight:700;cursor:pointer;}
+#new,#hint{background:transparent;color:var(--neon-blue);border:2px solid var(--neon-blue);border-radius:8px;padding:8px 22px;font-family:'Orbitron';font-weight:700;cursor:pointer;}
 #new:hover{background:var(--neon-blue);color:#000;}
+#hint{color:var(--gold);border-color:var(--gold);}
+#hint:hover:not(:disabled){background:var(--gold);color:#000;}
+#hint:disabled{opacity:.35;cursor:default;}
+#btns{display:flex;gap:10px;justify-content:center;margin-top:8px;}
 </style>
 </head>
 <body>
@@ -31,7 +35,7 @@ canvas{display:block;margin:0 auto;background:#0a0e18;border-radius:6px;}
 <div id="word"></div>
 <div id="kb"></div>
 <div id="msg"></div>
-<button id="new">NEW WORD</button>
+<div id="btns"><button id="hint">💡 HINT</button><button id="new">NEW WORD</button></div>
 </div>
 <script>
 const ctx=document.getElementById("c").getContext("2d");
@@ -43,7 +47,8 @@ const BANK=[
  {c:"Space",w:["GALAXY","NEBULA","ASTEROID","METEOR","SATELLITE","GRAVITY","ECLIPSE","COMET","ORBIT","TELESCOPE","SUPERNOVA","COSMOS"]},
  {c:"Sports",w:["BASKETBALL","CRICKET","SWIMMING","MARATHON","CYCLING","BOXING","SKATING","VOLLEYBALL","ARCHERY","SURFING","ROWING","FENCING"]}
 ];
-let word,cat,guessed,wrong,over;
+let word,cat,guessed,wrong,over,hints,streak=0;
+let best=+(localStorage.getItem("hangmanBest")||0);
 function draw(){ctx.clearRect(0,0,260,220);ctx.strokeStyle="#3a4a66";ctx.lineWidth=5;ctx.lineCap="round";
  // gallows
  ctx.beginPath();ctx.moveTo(20,205);ctx.lineTo(120,205);ctx.moveTo(50,205);ctx.lineTo(50,25);ctx.lineTo(160,25);ctx.lineTo(160,50);ctx.stroke();
@@ -58,16 +63,17 @@ function draw(){ctx.clearRect(0,0,260,220);ctx.strokeStyle="#3a4a66";ctx.lineWid
  for(let i=0;i<wrong&&i<6;i++){if(i>=1)ctx.strokeStyle="#ff3355",ctx.shadowColor="#ff3355";p[i]();}
  ctx.shadowBlur=0;}
 function showWord(){document.getElementById("word").textContent=word.split("").map(ch=>guessed.has(ch)?ch:"_").join(" ");}
-function newGame(){const g=BANK[Math.random()*BANK.length|0];cat=g.c;word=g.w[Math.random()*g.w.length|0];guessed=new Set();wrong=0;over=false;
- document.getElementById("cat").textContent=cat;document.getElementById("msg").textContent="";buildKb();showWord();draw();}
+function newGame(){const g=BANK[Math.random()*BANK.length|0];cat=g.c;word=g.w[Math.random()*g.w.length|0];guessed=new Set();wrong=0;over=false;hints=1;
+ document.getElementById("cat").textContent=cat;const m=document.getElementById("msg");m.textContent=streak?("Streak "+streak+" · best "+best):"";m.style.color="#9bd";document.getElementById("hint").disabled=false;buildKb();showWord();draw();}
 function buildKb(){const kb=document.getElementById("kb");kb.innerHTML="";for(let i=65;i<=90;i++){const ch=String.fromCharCode(i);const b=document.createElement("button");b.className="key";b.textContent=ch;b.id="k"+ch;b.onclick=()=>pick(ch);kb.appendChild(b);}}
 function pick(ch){if(over||guessed.has(ch))return;if(!AC)beep(440);guessed.add(ch);const btn=document.getElementById("k"+ch);btn.disabled=true;
  if(word.includes(ch)){btn.classList.add("good");beep(660,0.06);showWord();if(word.split("").every(c=>guessed.has(c))){over=true;win();}}
  else{btn.classList.add("bad");wrong++;beep(200,0.1);draw();if(wrong>=6){over=true;lose();}}}
-function win(){const m=document.getElementById("msg");m.textContent="YOU GOT IT! 🎉";m.style.color="#00ff88";beep(880,0.15);beep(1100,0.18);}
-function lose(){const m=document.getElementById("msg");m.textContent="GAME OVER — "+word;m.style.color="#ff3355";for(const c of word)guessed.add(c);showWord();beep(150,0.35,"sawtooth",0.14);}
+function win(){streak++;if(streak>best){best=streak;localStorage.setItem("hangmanBest",best);}const m=document.getElementById("msg");m.textContent="YOU GOT IT! 🎉 Streak "+streak+" (best "+best+")";m.style.color="#00ff88";document.getElementById("hint").disabled=true;beep(880,0.15);beep(1100,0.18);}
+function lose(){streak=0;const m=document.getElementById("msg");m.textContent="GAME OVER — "+word;m.style.color="#ff3355";document.getElementById("hint").disabled=true;for(const c of word)guessed.add(c);showWord();beep(150,0.35,"sawtooth",0.14);}
 window.addEventListener("keydown",e=>{if(/^[a-zA-Z]$/.test(e.key))pick(e.key.toUpperCase());});
 document.getElementById("new").onclick=newGame;
+document.getElementById("hint").onclick=()=>{if(over||hints<=0)return;const rem=word.split("").filter(c=>!guessed.has(c));if(!rem.length)return;hints--;document.getElementById("hint").disabled=true;if(!AC)beep(440);pick(rem[Math.random()*rem.length|0]);};
 newGame();
 </script>
 </body>

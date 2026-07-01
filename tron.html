@@ -22,15 +22,15 @@ button:hover{background:var(--neon-blue);color:#000;box-shadow:0 0 28px var(--ne
 <body>
 <div id="frame">
 <canvas id="c" width="600" height="480"></canvas>
-<div id="menu" class="panel"><h1>LIGHT CYCLES</h1><p class="sub">Steer your neon cycle with <b>arrow keys</b> or <b>WASD</b>. Don't hit the walls, your own trail, or the enemy's. First to <b>5</b> rounds wins.</p><button id="start">RIDE</button></div>
+<div id="menu" class="panel"><h1>LIGHT CYCLES</h1><p class="sub">Steer your neon cycle with <b>arrow keys</b> or <b>WASD</b>. Hold <b>Shift</b> to burn boost for a speed burst. Don't hit the walls, your own trail, or the enemy's — and the pace climbs the longer a round runs. First to <b>5</b> rounds wins.</p><button id="start">RIDE</button></div>
 <div id="over" class="panel hidden"><h1 id="ovt">MATCH OVER</h1><p class="sub" id="ovs"></p><button id="retry">PLAY AGAIN</button></div>
 </div>
 <script>
 const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
 const CELL=8,GW=75,GH=60;
 let AC=null;function beep(f,d=0.06,t="square",v=0.08){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
-let grid,p,e,sc1,sc2,state="menu",acc,dead,flash;
-function newRound(){grid=Array.from({length:GH},()=>new Int8Array(GW));p={x:12,y:GH/2|0,dx:1,dy:0,nd:null};e={x:GW-13,y:GH/2|0,dx:-1,dy:0};grid[p.y][p.x]=1;grid[e.y][e.x]=2;acc=0;dead=null;flash=0;}
+let grid,p,e,sc1,sc2,state="menu",acc,dead,flash,rt=0,keysBoost=false;
+function newRound(){grid=Array.from({length:GH},()=>new Int8Array(GW));p={x:12,y:GH/2|0,dx:1,dy:0,nd:null,energy:100};e={x:GW-13,y:GH/2|0,dx:-1,dy:0};grid[p.y][p.x]=1;grid[e.y][e.x]=2;acc=0;dead=null;flash=0;rt=0;}
 function reset(){sc1=0;sc2=0;newRound();}
 const free=(x,y)=>x>=0&&x<GW&&y>=0&&y<GH&&grid[y][x]===0;
 function flood(x,y){if(!free(x,y))return 0;const seen=new Set();const q=[[x,y]];seen.add(x+","+y);let n=0;while(q.length&&n<160){const[cx,cy]=q.pop();n++;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=cx+dx,ny=cy+dy,k=nx+","+ny;if(free(nx,ny)&&!seen.has(k)){seen.add(k);q.push([nx,ny]);}}}return n;}
@@ -53,10 +53,15 @@ function draw(){ctx.fillStyle="#060912";ctx.fillRect(0,0,600,480);
  head(p,"#aef9ff");head(e,"#ffcdf7");
  if(flash>0){ctx.fillStyle="rgba(255,80,80,"+flash+")";ctx.fillRect(0,0,600,480);}
  // score
- ctx.fillStyle="#00f2ff";ctx.font="bold 16px Orbitron";ctx.fillText("YOU "+sc1,10,22);ctx.fillStyle="#ff3df0";ctx.textAlign="right";ctx.fillText(sc2+" CPU",590,22);ctx.textAlign="left";}
+ ctx.fillStyle="#00f2ff";ctx.font="bold 16px Orbitron";ctx.fillText("YOU "+sc1,10,22);ctx.fillStyle="#ff3df0";ctx.textAlign="right";ctx.fillText(sc2+" CPU",590,22);ctx.textAlign="left";
+ ctx.fillStyle="rgba(255,255,255,0.15)";ctx.fillRect(245,9,110,9);ctx.fillStyle=p.energy>25?"#ffd700":"#ff3355";ctx.fillRect(245,9,110*p.energy/100,9);ctx.fillStyle="#9bd";ctx.font="9px Orbitron";ctx.textAlign="center";ctx.fillText("BOOST · Shift",300,30);ctx.textAlign="left";}
 function head(o,col){ctx.fillStyle=col;ctx.shadowBlur=10;ctx.shadowColor=col;ctx.fillRect(o.x*CELL-1,o.y*CELL-1,CELL+1,CELL+1);ctx.shadowBlur=0;}
-let last=0;function loop(ts){const dt=(ts-last)/1000;last=ts;if(flash>0)flash-=dt;if(state==="play"){acc+=dt;while(acc>=0.055){acc-=0.055;if(state==="play")tick();}}if(state!=="menu")draw();requestAnimationFrame(loop);}
-window.addEventListener("keydown",ev=>{const k=ev.key.toLowerCase();let d=null;if(k==="arrowup"||k==="w")d=[0,-1];else if(k==="arrowdown"||k==="s")d=[0,1];else if(k==="arrowleft"||k==="a")d=[-1,0];else if(k==="arrowright"||k==="d")d=[1,0];if(d){ev.preventDefault();p.nd=d;}});
+let last=0;function loop(ts){let dt=(ts-last)/1000;last=ts;if(dt>0.1)dt=0.1;if(flash>0)flash-=dt;
+ if(state==="play"){rt+=dt;const boosting=keysBoost&&p.energy>0;if(boosting)p.energy=Math.max(0,p.energy-45*dt);else p.energy=Math.min(100,p.energy+16*dt);
+  let iv=Math.max(0.03,0.055-rt*0.0018);if(boosting)iv*=0.5;acc+=dt;while(acc>=iv){acc-=iv;if(state==="play")tick();}}
+ if(state!=="menu")draw();requestAnimationFrame(loop);}
+window.addEventListener("keydown",ev=>{const k=ev.key.toLowerCase();if(k==="shift"||k===" "){keysBoost=true;ev.preventDefault();return;}let d=null;if(k==="arrowup"||k==="w")d=[0,-1];else if(k==="arrowdown"||k==="s")d=[0,1];else if(k==="arrowleft"||k==="a")d=[-1,0];else if(k==="arrowright"||k==="d")d=[1,0];if(d){ev.preventDefault();p.nd=d;}});
+window.addEventListener("keyup",ev=>{const k=ev.key.toLowerCase();if(k==="shift"||k===" ")keysBoost=false;});
 function start(){if(!AC)beep(440);reset();state="play";document.getElementById("menu").classList.add("hidden");document.getElementById("over").classList.add("hidden");}
 document.getElementById("start").onclick=start;document.getElementById("retry").onclick=start;
 requestAnimationFrame(loop);

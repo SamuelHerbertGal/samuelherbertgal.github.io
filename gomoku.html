@@ -38,10 +38,22 @@ function place(r,c,who){board[r][c]=who;last=[r,c];const w=winAt(r,c,who);if(w){
 function patVal(count,open){if(count>=5)return 1e7;if(count===4)return open===2?100000:open===1?12000:0;if(count===3)return open===2?6000:open===1?450:0;if(count===2)return open===2?260:open===1?24:0;return open>=1?open*6:1;}
 function evalPlace(r,c,who){let tot=0;for(const[dr,dc]of DIRS){let count=1,i=1;while(cell(r+dr*i,c+dc*i)===who){count++;i++;}const f=cell(r+dr*i,c+dc*i);let j=1;while(cell(r-dr*j,c-dc*j)===who){count++;j++;}const b=cell(r-dr*j,c-dc*j);let open=0;if(f===0)open++;if(b===0)open++;tot+=patVal(count,open);}return tot;}
 function candidates(){const set=new Set();let any=false;for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(board[r][c]){any=true;for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++){const nr=r+dr,nc=c+dc;if(cell(nr,nc)===0)set.add(nr+","+nc);}}if(!any)return[[7,7]];return[...set].map(s=>s.split(",").map(Number));}
+function boardScore(who){const opp=who===1?2:1,val=[0,1,14,140,1400,120000];let s=0;
+ for(let r=0;r<N;r++)for(let c=0;c<N;c++)for(const[dr,dc]of DIRS){const er=r+dr*4,ec=c+dc*4;if(er<0||er>=N||ec<0||ec>=N)continue;let cw=0,co=0;for(let k=0;k<5;k++){const v=board[r+dr*k][c+dc*k];if(v===who)cw++;else if(v===opp)co++;}if(co===0&&cw>0)s+=val[cw];}return s;}
+function posEval(){return boardScore(2)-boardScore(1)*1.1;}
 function cpuMove(){if(state!=="play")return;const cand=candidates();
  for(const[r,c]of cand){if(winAt2(r,c,2)){place(r,c,2);finishCpu();return;}}
  for(const[r,c]of cand){if(winAt2(r,c,1)){place(r,c,2);finishCpu();return;}}
- let best=cand[0],bv=-1;for(const[r,c]of cand){const v=evalPlace(r,c,2)*1.0+evalPlace(r,c,1)*1.12+(7-Math.abs(r-7)-Math.abs(c-7))*0.5+Math.random()*3;if(v>bv){bv=v;best=[r,c];}}place(best[0],best[1],2);finishCpu();}
+ const scored=cand.map(([r,c])=>({r,c,h:evalPlace(r,c,2)+evalPlace(r,c,1)*1.12+(7-Math.abs(r-7)-Math.abs(c-7))*0.4})).sort((a,b)=>b.h-a.h).slice(0,10);
+ let best=scored[0],bv=-1e18;
+ for(const m of scored){board[m.r][m.c]=2;
+  const oc=candidates();let worst;
+  if(!oc.length)worst=posEval();
+  else{worst=1e18;const oScored=oc.map(([r,c])=>({r,c,h:evalPlace(r,c,1)+evalPlace(r,c,2)*0.9})).sort((a,b)=>b.h-a.h).slice(0,8);
+   for(const o of oScored){if(winAt2(o.r,o.c,1)){worst=-1e17;break;}board[o.r][o.c]=1;const v=posEval();board[o.r][o.c]=0;if(v<worst)worst=v;}}
+  board[m.r][m.c]=0;
+  const val=worst+Math.random()*30;if(val>bv){bv=val;best=m;}}
+ place(best.r,best.c,2);finishCpu();}
 function winAt2(r,c,who){board[r][c]=who;const w=winAt(r,c,who);board[r][c]=0;return w;}
 function finishCpu(){beep(300,0.06);if(state==="play"){turn=1;msg="Your move.";}}
 function click(r,c){if(state!=="play"||turn!==1||cell(r,c)!==0)return;beep(560,0.05);if(place(r,c,1))return;turn=2;msg="CPU thinking…";setTimeout(cpuMove,250);}

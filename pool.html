@@ -37,6 +37,10 @@ function rack(){balls=[];const startX=W*0.68,startY=H/2;let k=0;for(let col=0;co
 function reset(){cue={x:W*0.28,y:H/2,vx:0,vy:0,live:true,cue:true};rack();strokes=0;potted=0;drag=null;}
 function moving(){return Math.abs(cue.vx)>2||Math.abs(cue.vy)>2||balls.some(b=>b.live&&(Math.abs(b.vx)>2||Math.abs(b.vy)>2));}
 function all(){return [cue,...balls];}
+function project(a){const dx=Math.cos(a),dy=Math.sin(a);let bestT=Infinity,hit=null;
+ for(const b of balls){if(!b.live)continue;const ex=b.x-cue.x,ey=b.y-cue.y,proj=ex*dx+ey*dy;if(proj<=0)continue;const perp=Math.abs(ex*dy-ey*dx);if(perp<2*R){const back=Math.sqrt(Math.max(0,4*R*R-perp*perp)),t=proj-back;if(t>0&&t<bestT){bestT=t;hit=b;}}}
+ let wt=Infinity;if(dx>0)wt=Math.min(wt,((W-M-R)-cue.x)/dx);if(dx<0)wt=Math.min(wt,((M+R)-cue.x)/dx);if(dy>0)wt=Math.min(wt,((H-M-R)-cue.y)/dy);if(dy<0)wt=Math.min(wt,((M+R)-cue.y)/dy);
+ const t=Math.min(bestT,wt);return{ex:cue.x+dx*t,ey:cue.y+dy*t,hit,bestT,wt};}
 function step(dt){for(const b of all()){if(!b.live)continue;b.x+=b.vx*dt;b.y+=b.vy*dt;const f=Math.pow(0.35,dt);b.vx*=f;b.vy*=f;if(Math.hypot(b.vx,b.vy)<2){b.vx=0;b.vy=0;}
   if(b.x<M+R){b.x=M+R;b.vx=Math.abs(b.vx);beep(200,0.03);}if(b.x>W-M-R){b.x=W-M-R;b.vx=-Math.abs(b.vx);beep(200,0.03);}
   if(b.y<M+R){b.y=M+R;b.vy=Math.abs(b.vy);}if(b.y>H-M-R){b.y=H-M-R;b.vy=-Math.abs(b.vy);}}
@@ -54,7 +58,10 @@ function draw(){ctx.fillStyle="#3a2a1a";ctx.fillRect(0,0,W,H);ctx.fillStyle="#0a
  for(const b of balls){if(!b.live)continue;drawBall(b);}
  if(cue.live){drawBall(cue);}
  // aim
- if(drag&&drag!=="await"&&cue.live&&!moving()){const dx=cue.x-mouse.x,dy=cue.y-mouse.y,d=Math.hypot(dx,dy),pw=Math.min(d,150);const a=Math.atan2(dy,dx);ctx.strokeStyle="rgba(255,255,255,0.5)";ctx.setLineDash([6,6]);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(cue.x,cue.y);ctx.lineTo(cue.x+Math.cos(a)*(pw*2.2),cue.y+Math.sin(a)*(pw*2.2));ctx.stroke();ctx.setLineDash([]);
+ if(drag&&drag!=="await"&&cue.live&&!moving()){const dx=cue.x-mouse.x,dy=cue.y-mouse.y,d=Math.hypot(dx,dy),pw=Math.min(d,150);const a=Math.atan2(dy,dx);const pr=project(a);
+  ctx.strokeStyle="rgba(255,255,255,0.6)";ctx.setLineDash([6,6]);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(cue.x,cue.y);ctx.lineTo(pr.ex,pr.ey);ctx.stroke();ctx.setLineDash([]);
+  ctx.strokeStyle="rgba(255,255,255,0.35)";ctx.lineWidth=1;ctx.beginPath();ctx.arc(pr.ex,pr.ey,R,0,7);ctx.stroke();
+  if(pr.hit&&pr.bestT<=pr.wt){const pa=Math.atan2(pr.hit.y-pr.ey,pr.hit.x-pr.ex);ctx.strokeStyle="rgba(255,215,0,0.7)";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(pr.hit.x,pr.hit.y);ctx.lineTo(pr.hit.x+Math.cos(pa)*32,pr.hit.y+Math.sin(pa)*32);ctx.stroke();}
   ctx.strokeStyle="#ffd700";ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(cue.x,cue.y);ctx.lineTo(mouse.x,mouse.y);ctx.stroke();ctx.fillStyle="#ffd700";ctx.font="bold 12px Orbitron";ctx.fillText("Power "+Math.round(pw/150*100)+"%",cue.x+10,cue.y-14);}
  ctx.fillStyle="#fff";ctx.font="bold 15px Orbitron";ctx.fillText("SHOTS "+strokes,12,20);ctx.textAlign="right";ctx.fillText("SUNK "+potted+"/15",W-12,20);ctx.textAlign="left";}
 function drawBall(b){ctx.fillStyle=b.cue?"#fff":b.col;ctx.shadowBlur=8;ctx.shadowColor=b.cue?"#fff":b.col;ctx.beginPath();ctx.arc(b.x,b.y,R,0,7);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle="rgba(255,255,255,0.5)";ctx.beginPath();ctx.arc(b.x-3,b.y-3,3,0,7);ctx.fill();}

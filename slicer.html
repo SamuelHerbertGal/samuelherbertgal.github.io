@@ -22,7 +22,7 @@ button:hover{background:var(--neon-blue);color:#000;box-shadow:0 0 28px var(--ne
 <body>
 <div id="frame">
 <canvas id="c" width="600" height="500"></canvas>
-<div id="menu" class="panel"><h1>FRUIT SLICER</h1><p class="sub">Swipe the mouse to slice flying fruit. Chain slices for combo bonuses. <b>Don't slice the bombs</b> 💣 and don't let three fruit drop.</p><button id="start">SLICE</button></div>
+<div id="menu" class="panel"><h1>FRUIT SLICER</h1><p class="sub">Swipe the mouse to slice flying fruit. Chain slices for rising combo multipliers (x2, x3). Grab ⭐ gold for bonus points and ❄️ ice for slow-motion. <b>Don't slice the bombs</b> 💣 and don't let three fruit drop.</p><button id="start">SLICE</button></div>
 <div id="over" class="panel hidden"><h1 id="ovt">GAME OVER</h1><p class="sub" id="ovs"></p><button id="retry">AGAIN</button></div>
 </div>
 <script>
@@ -30,28 +30,38 @@ const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
 const W=600,H=500,G=1100;
 let AC=null;function beep(f,d=0.06,t="square",v=0.08){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
 const FRUITS=[["🍉","#ff4d6d"],["🍊","#ff9f1c"],["🍋","#ffe600"],["🍏","#8cff5a"],["🍇","#b06bff"],["🍓","#ff5a8c"],["🥝","#9bd44a"]];
-let items,parts,blade,score,lives,combo,comboT,state="menu",spawnT,best=+(localStorage.getItem("slicerBest")||0);
-function reset(){items=[];parts=[];blade=[];score=0;lives=3;combo=0;comboT=0;spawnT=0.6;}
-function spawn(){const bomb=Math.random()<0.16;const x=60+Math.random()*(W-120);const f=FRUITS[Math.random()*FRUITS.length|0];
- items.push({x,y:H+30,vx:(W/2-x)*0.7+(Math.random()-0.5)*160,vy:-(760+Math.random()*260),r:30,emoji:bomb?"💣":f[0],col:bomb?"#888":f[1],bomb,sliced:false});}
+let items,parts,blade,score,lives,combo,comboT,state="menu",spawnT,slowT=0,best=+(localStorage.getItem("slicerBest")||0);
+function reset(){items=[];parts=[];blade=[];score=0;lives=3;combo=0;comboT=0;spawnT=0.6;slowT=0;}
+function spawn(){const rnd=Math.random();let kind="fruit",emoji,col;
+ if(rnd<0.14){kind="bomb";emoji="💣";col="#888";}
+ else if(rnd<0.19){kind="gold";emoji="⭐";col="#ffd700";}
+ else if(rnd<0.24){kind="ice";emoji="❄️";col="#7fe0ff";}
+ else{const f=FRUITS[Math.random()*FRUITS.length|0];emoji=f[0];col=f[1];}
+ const x=60+Math.random()*(W-120);
+ items.push({x,y:H+30,vx:(W/2-x)*0.7+(Math.random()-0.5)*160,vy:-(760+Math.random()*260),r:30,emoji,col,kind,sliced:false});}
 function slicePt(x,y){for(const it of items){if(it.sliced)continue;if(Math.hypot(it.x-x,it.y-y)<it.r+6){hit(it);}}}
 function hit(it){it.sliced=true;
- if(it.bomb){for(let i=0;i<40;i++)parts.push({x:it.x,y:it.y,vx:(Math.random()-0.5)*500,vy:(Math.random()-0.5)*500,life:0.7,col:i%2?"#ff8c00":"#fff"});beep(80,0.5,"sawtooth",0.2);gameOver("You sliced a bomb!");return;}
- combo++;comboT=0.5;const pts=combo>=3?2:1;score+=pts;
- if(combo>=3)floatText(it.x,it.y,"COMBO x"+combo);
+ if(it.kind==="bomb"){for(let i=0;i<40;i++)parts.push({x:it.x,y:it.y,vx:(Math.random()-0.5)*500,vy:(Math.random()-0.5)*500,life:0.7,col:i%2?"#ff8c00":"#fff"});beep(80,0.5,"sawtooth",0.2);gameOver("You sliced a bomb!");return;}
+ combo++;comboT=0.6;const mult=combo>=6?3:combo>=3?2:1;let pts=1;
+ if(it.kind==="gold"){pts=5;floatText(it.x,it.y,"+"+(5*mult)+" GOLD");}
+ else if(it.kind==="ice"){pts=2;slowT=4;floatText(it.x,it.y,"❄ SLOW-MO");beep(300,0.25,"sine",0.12);}
+ else if(combo>=3)floatText(it.x,it.y,"COMBO x"+mult);
+ score+=pts*mult;
  for(let i=0;i<16;i++)parts.push({x:it.x,y:it.y,vx:(Math.random()-0.5)*360,vy:(Math.random()-0.5)*360-100,life:0.6,col:it.col});
  beep(500+combo*40,0.06);}
 let floats=[];function floatText(x,y,t){floats.push({x,y,t,life:0.8});}
 function gameOver(reason){state="over";if(score>best){best=score;localStorage.setItem("slicerBest",best);}document.getElementById("ovt").textContent="GAME OVER";document.getElementById("ovs").textContent=reason+" · Score "+score+" · Best "+best;document.getElementById("over").classList.remove("hidden");}
 function update(dt){if(state!=="play")return;
+ if(slowT>0)slowT-=dt;const sdt=slowT>0?dt*0.4:dt;
  spawnT-=dt;if(spawnT<=0){const burst=1+(Math.random()<Math.min(0.5,score/60)?1:0);for(let i=0;i<burst;i++)spawn();spawnT=Math.max(0.45,1.1-score*0.012);}
- for(const it of items){it.vy+=G*dt;it.x+=it.vx*dt;it.y+=it.vy*dt;}
- for(let i=items.length-1;i>=0;i--){const it=items[i];if(it.y>H+60){if(!it.sliced&&!it.bomb){lives--;beep(180,0.15);floatText(W/2,H/2,"MISS");if(lives<=0){gameOver("Too many dropped!");return;}}items.splice(i,1);}}
- for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.vy+=G*0.5*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life<=0)parts.splice(i,1);}
+ for(const it of items){it.vy+=G*sdt;it.x+=it.vx*sdt;it.y+=it.vy*sdt;}
+ for(let i=items.length-1;i>=0;i--){const it=items[i];if(it.y>H+60){if(!it.sliced&&it.kind!=="bomb"){lives--;beep(180,0.15);floatText(W/2,H/2,"MISS");if(lives<=0){gameOver("Too many dropped!");return;}}items.splice(i,1);}}
+ for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.vy+=G*0.5*sdt;p.x+=p.vx*sdt;p.y+=p.vy*sdt;p.life-=dt;if(p.life<=0)parts.splice(i,1);}
  for(let i=floats.length-1;i>=0;i--){floats[i].y-=dt*40;floats[i].life-=dt;if(floats[i].life<=0)floats.splice(i,1);}
  if(comboT>0){comboT-=dt;if(comboT<=0)combo=0;}
  for(let i=blade.length-1;i>=0;i--){blade[i].life-=dt;if(blade[i].life<=0)blade.splice(i,1);}}
 function draw(){ctx.fillStyle="#0a0e18";ctx.fillRect(0,0,W,H);
+ if(slowT>0){ctx.fillStyle="rgba(120,220,255,0.10)";ctx.fillRect(0,0,W,H);ctx.fillStyle="rgba(127,224,255,0.8)";ctx.font="bold 13px Orbitron";ctx.textAlign="center";ctx.fillText("❄ SLOW-MO "+slowT.toFixed(1)+"s",W/2,50);ctx.textAlign="left";}
  for(const p of parts){ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle=p.col;ctx.fillRect(p.x-3,p.y-3,6,6);}ctx.globalAlpha=1;
  for(const it of items){if(it.sliced)continue;ctx.font="46px serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowBlur=16;ctx.shadowColor=it.col;ctx.fillText(it.emoji,it.x,it.y);ctx.shadowBlur=0;}
  ctx.textBaseline="alphabetic";
