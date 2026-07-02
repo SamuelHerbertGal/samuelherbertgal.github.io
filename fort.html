@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fort Breach</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root{--amber:#ffb347;--blue:#00f2ff;--green:#00ff88;--red:#ff3355;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#000;color:var(--amber);font-family:'Orbitron',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden;}
+#frame{position:relative;border:3px solid var(--amber);border-radius:8px;box-shadow:0 0 35px rgba(255,179,71,0.35);background:#05060f;width:906px;}
+canvas{display:block;}
+#topbar,#botbar{display:flex;align-items:center;gap:14px;padding:7px 12px;background:#0a0c16;font-size:0.72rem;}
+#topbar{border-bottom:1px solid #2a2f45;}
+#botbar{border-top:1px solid #2a2f45;flex-direction:column;align-items:stretch;gap:4px;}
+#clock{color:var(--blue);font-weight:700;min-width:74px;}
+#clock.low{color:var(--red);}
+#obj{flex:1;color:#c8d2e8;line-height:1.4;}
+#alerts{color:var(--red);font-weight:700;letter-spacing:2px;min-width:110px;text-align:right;}
+#tools{display:flex;gap:10px;flex-wrap:wrap;min-height:18px;}
+.tool{color:var(--green);border:1px solid #1e4d38;border-radius:5px;padding:2px 8px;font-size:0.68rem;}
+.tool.spent{color:#4a5568;border-color:#2a3040;}
+#msg{color:var(--amber);min-height:18px;font-size:0.72rem;line-height:1.4;}
+.panel{position:absolute;inset:0;background:rgba(2,3,10,0.93);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:5;padding:30px 46px;}
+.panel.hidden{display:none;}
+h1{font-size:2.1rem;font-weight:900;font-style:italic;color:#fff;text-shadow:0 0 24px var(--amber);margin-bottom:14px;}
+.story{font-size:0.78rem;color:#c8d2e8;line-height:1.75;max-width:640px;margin-bottom:16px;text-align:left;}
+.story b{color:var(--amber);}
+.rules{font-size:0.72rem;color:var(--green);line-height:1.7;margin-bottom:18px;}
+.ctrl{font-size:0.68rem;color:#7a86a0;margin-bottom:20px;line-height:1.7;}
+button{background:transparent;color:var(--amber);border:2px solid var(--amber);border-radius:10px;padding:12px 34px;font-family:'Orbitron';font-size:1rem;font-weight:700;cursor:pointer;transition:0.2s;}
+button:hover{background:var(--amber);color:#000;box-shadow:0 0 28px var(--amber);}
+</style>
+</head>
+<body>
+<div id="frame">
+  <div id="topbar"><span id="clock">06:00</span><span id="obj"></span><span id="alerts"></span></div>
+  <canvas id="c" width="900" height="600"></canvas>
+  <div id="botbar"><div id="tools"></div><div id="msg"></div></div>
+
+  <div id="intro" class="panel">
+    <h1>FORT BREACH</h1>
+    <div class="story">
+      <b>October 3rd, 1949.</b> Fort Sentinel was sealed overnight — the 112th Engineer Regiment marched out at dawn and never came back. Locked in the vault of the inner keep they left their regimental colors… and your grandfather's service journal.<br><br>
+      <b>Tonight,</b> seventy years later, the Army has signed the fort over to the wreckers. The demolition convoy arrives at first light. "Nothing inside is worth the paperwork," they told you. They didn't ask the family of the 112th.<br><br>
+      You are a <b>retired combat engineer</b>, and you kept your kit. The fort is empty of people — but its automated security still hums along on one stubborn diesel generator: a sweeping searchlight, seismic ground sensors, magnetic locks on every door. Get in. Cut the power. Open the vault. Bring the colors home before dawn.
+    </div>
+    <div class="rules">RULES OF THE NIGHT — harm nothing · take only what's yours · leave only footprints</div>
+    <div class="ctrl">MOVE: WASD / Arrow keys &nbsp;·&nbsp; USE TOOL / OPEN: E or Space &nbsp;·&nbsp; Walk up to an obstacle for a hint.<br>Stay out of the searchlight and sensor rings — three alerts and the night is blown.</div>
+    <button id="start">BEGIN THE INFILTRATION</button>
+  </div>
+
+  <div id="end" class="panel hidden">
+    <h1 id="endTitle"></h1>
+    <div class="story" id="endText" style="text-align:center;"></div>
+    <button id="retry">TRY AGAIN</button>
+  </div>
+</div>
+<script>
+const cv=document.getElementById("c"),ctx=cv.getContext("2d");
+const TS=30,MW=30,MH=20;
+let AC=null;function beep(f,d=0.07,t="square",v=0.06){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}}try{const o=AC.createOscillator(),g=AC.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
+
+const MAP=[
+"##############################",
+"#....F....MM...#.......F.#...#",
+"#....F....MM...#......FgF#...#",
+"#....F....MM...#.c.....F.#.V.#",
+"#....F..c.MM...#.........#...#",
+"#....F....MM...#.....s...#...#",
+"#....F....MM...#.........#...#",
+"#....F....MM...#..s......#...#",
+"#....F....MM...#.........#...#",
+"#....F....MM...C....T....#...#",
+"#....F....MM...C.........G...#",
+"#....F....MM...#.........#...#",
+"#....F....MM...#......s..#...#",
+"#....F....MM...#..s......#...#",
+"#....F....MM...#.........#...#",
+"#....F....MM.c.#.........#...#",
+"#....F....MM...#.......c.#...#",
+"#....F....MM...D.........D...#",
+"#.P..F....MM...#.........#...#",
+"##############################"];
+
+const CRATES={"8,4":"ladder","13,15":"grapple","17,3":"wire","23,16":"crowbar"};
+const TOOLDEF={
+ cutters:{name:"Bolt Cutters"},shovel:{name:"Entrenching Tool"},
+ ladder:{name:"Assault Ladder"},grapple:{name:"Grappling Hook"},
+ wire:{name:"Wire Kit"},crowbar:{name:"Crowbar"}};
+
+let grid,px,py,rx,ry,fx,fy,moving,mvT,mvFrom,state="menu";
+let inv,sensors,power,strikes,timeLeft,exposure,lightAng,flashT,checkpoint,band,flags,t=0,msgT=0;
+const TOWER={x:20.5*TS,y:9.5*TS};
+
+function reset(){
+ grid=MAP.map(r=>r.split(""));
+ sensors=[];
+ for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
+  const ch=grid[y][x];
+  if(ch==="P"){px=x;py=y;grid[y][x]=".";}
+  if(ch==="s")sensors.push({x,y,on:true});
+ }
+ rx=px*TS;ry=py*TS;fx=0;fy=-1;moving=false;
+ inv={cutters:{own:true,n:3},shovel:{own:true,n:2},ladder:{own:false,n:0},
+      grapple:{own:false,n:0},wire:{own:false,n:Infinity},crowbar:{own:false,n:Infinity}};
+ power=true;strikes=0;timeLeft=360;exposure=0;lightAng=0;flashT=0;
+ checkpoint={x:px,y:py};band=0;
+ flags={fenceCut:false,bridged:false,insideWall:false,gateOpen:false};
+ msg("The treeline ends here. The fence is dead ahead — your bolt cutters are ready.");
+ renderTools();
+}
+function msg(s){document.getElementById("msg").textContent=s;msgT=5;}
+function renderTools(){
+ const el=document.getElementById("tools");el.innerHTML="";
+ for(const k in inv){const it=inv[k];if(!it.own)continue;
+  const sp=document.createElement("span");sp.className="tool"+(it.n<=0?" spent":"");
+  sp.textContent=TOOLDEF[k].name+(it.n===Infinity?"":" ×"+it.n);el.appendChild(sp);}
+}
+function objective(){
+ if(!flags.fenceCut)return"OBJECTIVE: Breach the perimeter fence — walk up to it and press E.";
+ if(!flags.bridged)return"OBJECTIVE: Cross the dry moat. Scout the grounds for supply crates (E to open).";
+ if(!flags.insideWall)return"OBJECTIVE: Get past the outer wall — grapple the crumbling masonry or dig under the soft earth.";
+ if(power)return"OBJECTIVE: The generator feeds the light, sensors and maglocks. Reach it and cut the power.";
+ if(!flags.gateOpen&&px<26)return"OBJECTIVE: Power is down. Pry the keep gate open — or find another way inside.";
+ return"OBJECTIVE: Open the vault. Bring the colors home.";
+}
+function walkable(ch){return ch==="."||ch==="B"||ch==="R"||ch==="U"||ch==="O"||ch==="V";}
+function solidBlocksLight(ch){return ch==="#"||ch==="C"||ch==="G"||ch==="g"||ch==="T";}
+
+// ---------- interaction ----------
+function sensorAt(x,y){return sensors.find(s=>s.x===x&&s.y===y);}
+function interact(){
+ if(state!=="play"||moving)return;
+ const tx=px+fx,ty=py+fy;
+ if(tx<0||ty<0||tx>=MW||ty>=MH)return;
+ const ch=grid[ty][tx];
+ if(ch==="F"){
+  if(inv.cutters.n>0){inv.cutters.n--;grid[ty][tx]=".";beep(900,0.05);beep(650,0.08,"square",0.05);
+   if(tx===5){flags.fenceCut=true;msg("Snip. Snip. The chain-link peels back — you're through the perimeter.");}
+   else msg("You cut through the generator's safety cage.");
+  }else msg("Your bolt cutters are spent.");
+ }else if(ch==="M"){
+  if(inv.ladder.own&&inv.ladder.n>0){inv.ladder.n--;grid[ty][10]="B";grid[ty][11]="B";flags.bridged=true;
+   beep(300,0.12,"triangle");msg("You unfold the assault ladder across the dry moat. It'll hold.");}
+  else msg("A dry moat, three metres deep. You'll need to bridge it — check the supply crates.");
+ }else if(ch==="C"){
+  if(inv.grapple.own&&inv.grapple.n>0){inv.grapple.n--;grid[ty][tx]="R";beep(500,0.1,"triangle");
+   msg("The hook bites the crumbling parapet. Rope secured — climb through.");}
+  else msg("The masonry is crumbling here. A grappling hook would bite.");
+ }else if(ch==="D"){
+  if(inv.shovel.n>0){inv.shovel.n--;grid[ty][tx]="U";beep(220,0.15,"triangle");
+   msg("Ten quiet minutes with the entrenching tool — a crawl-space opens under the wall.");}
+  else msg("Soft earth against the wall… but your entrenching tool has had it.");
+ }else if(ch==="c"){
+  const item=CRATES[tx+","+ty];grid[ty][tx]=".";beep(760,0.06);beep(1040,0.09);
+  if(item){inv[item].own=true;
+   if(item==="ladder"){inv.ladder.n=1;msg("Supply crate: a folding ASSAULT LADDER. That'll bridge the moat.");}
+   if(item==="grapple"){inv.grapple.n=2;msg("Supply crate: a GRAPPLING HOOK and climbing rope, still oiled.");}
+   if(item==="wire"){msg("Supply crate: a field WIRE KIT — clips, spudger, insulated snips. Sensors and generators beware.");}
+   if(item==="crowbar"){msg("Supply crate: a CROWBAR stamped '112th ENG'. Grandpa's unit issue.");}
+  }
+ }else if(ch==="g"){
+  if(!power)msg("The generator is stone dead. Good.");
+  else if(inv.wire.own){power=false;beep(160,0.5,"sawtooth",0.09);setTimeout(()=>beep(90,0.7,"sawtooth",0.07),350);
+   msg("Three wires, two clips, one breath — the generator coughs and dies. The fort goes dark. Maglocks released.");}
+  else msg("The old diesel generator, still humming. You need a wire kit — you promised to harm nothing.");
+ }else if(ch==="s"){
+  const s=sensorAt(tx,ty);
+  if(s&&!s.on)msg("This sensor is already disarmed.");
+  else if(inv.wire.own){s.on=false;beep(1200,0.05);msg("Two snips and the ground sensor goes quiet.");}
+  else msg("A seismic ground sensor, still armed. A wire kit could disarm it.");
+ }else if(ch==="G"){
+  if(power)msg("The keep gate — magnetic lock ARMED. Cut the generator power first.");
+  else if(inv.crowbar.own){grid[ty][tx]="O";flags.gateOpen=true;beep(200,0.2,"sawtooth");beep(340,0.15);
+   msg("The crowbar groans against seventy years of rust — the keep gate swings open.");}
+  else msg("The gate is unlocked now, but rusted shut. A crowbar would do it.");
+ }else if(ch==="V"){tryVault();}
+ renderTools();
+}
+function bumpHint(ch,tx,ty){
+ if(ch==="F")msg(inv.cutters.n>0?"Chain-link fence — press E to cut (Bolt Cutters ×"+inv.cutters.n+").":"Chain-link fence — your cutters are spent.");
+ else if(ch==="M")msg(inv.ladder.own&&inv.ladder.n>0?"Dry moat — press E to deploy the assault ladder.":"A dry moat, three metres deep. Find something to bridge it.");
+ else if(ch==="C")msg(inv.grapple.own&&inv.grapple.n>0?"Crumbling masonry — press E to grapple up and over.":"Crumbling masonry. A grappling hook would bite here.");
+ else if(ch==="D")msg(inv.shovel.n>0?"Soft earth — press E to dig under the wall (Entrenching Tool ×"+inv.shovel.n+").":"Soft earth, but your entrenching tool is done.");
+ else if(ch==="c")msg("Supply crate — press E to open.");
+ else if(ch==="g")msg(power?(inv.wire.own?"The generator — press E to cut the power (Wire Kit).":"The generator hums. Find a Wire Kit to kill it cleanly."):"Dead generator.");
+ else if(ch==="s"){const s=sensorAt(tx,ty);msg(s&&s.on?(inv.wire.own?"Ground sensor — press E to disarm.":"Armed ground sensor! Keep clear or find a Wire Kit."):"Disarmed sensor.");}
+ else if(ch==="G")msg(power?"Keep gate — magnetic lock ARMED. Cut the power first.":(inv.crowbar.own?"Keep gate — press E to pry it open (Crowbar).":"Keep gate — unlocked but rusted shut. You need a crowbar."));
+}
+function tryVault(){
+ if(power)msg("The vault's electric maglock is still armed. Cut the power at the generator.");
+ else win();
+}
+
+// ---------- movement ----------
+const keys={};
+addEventListener("keydown",e=>{
+ const k=e.key.toLowerCase();
+ if(["arrowup","arrowdown","arrowleft","arrowright"," "].includes(e.key.toLowerCase())||e.key===" ")e.preventDefault();
+ if(k==="e"||e.key===" "){interact();return;}
+ const d=dirOf(k);if(d&&!keys[k]){keys[k]=true;tryMove(d[0],d[1],true);}else if(d)keys[k]=true;
+});
+addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false;});
+function dirOf(k){return{w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]}[k];}
+function heldDir(){for(const k in keys)if(keys[k]){const d=dirOf(k);if(d)return d;}return null;}
+function tryMove(dx,dy,fromPress){
+ if(state!=="play"||moving)return;
+ fx=dx;fy=dy;
+ const tx=px+dx,ty=py+dy;
+ if(tx<0||ty<0||tx>=MW||ty>=MH)return;
+ const ch=grid[ty][tx];
+ if(walkable(ch)){mvFrom={x:px,y:py};px=tx;py=ty;moving=true;mvT=0;}
+ else if(fromPress)bumpHint(ch,tx,ty);
+}
+function finishMove(){
+ moving=false;rx=px*TS;ry=py*TS;
+ let nb=band;
+ if(px<5)nb=0;else if(px>5&&px<10)nb=1;else if(px>11&&px<15)nb=2;else if(px>15&&px<25)nb=3;else if(px>25)nb=4;
+ if(nb!==band){band=nb;checkpoint={x:px,y:py};if(nb===3&&!flags.insideWall){flags.insideWall=true;msg("You drop into the courtyard. The searchlight sweeps — watch its arc and the red sensor rings.");}}
+ if(grid[py][px]==="V")tryVault();
+}
+
+// ---------- detection ----------
+function lineOfSight(x0,y0,x1,y1){
+ const steps=Math.ceil(Math.hypot(x1-x0,y1-y0)/(TS/2));
+ for(let i=1;i<steps;i++){
+  const x=x0+(x1-x0)*i/steps,y=y0+(y1-y0)*i/steps;
+  const ch=grid[Math.floor(y/TS)]?.[Math.floor(x/TS)];
+  if(ch&&solidBlocksLight(ch))return false;
+ }return true;
+}
+function updateDetection(dt){
+ if(!power){exposure=Math.max(0,exposure-dt);return;}
+ const cxp=rx+TS/2,cyp=ry+TS/2;let seen=false;
+ const dx=cxp-TOWER.x,dy=cyp-TOWER.y,dist=Math.hypot(dx,dy);
+ if(dist<7*TS&&dist>14){
+  let a=Math.atan2(dy,dx),diff=Math.abs(((a-lightAng)%(Math.PI*2)+Math.PI*3)%(Math.PI*2)-Math.PI);
+  if(diff<0.30&&lineOfSight(TOWER.x,TOWER.y,cxp,cyp))seen=true;
+ }
+ for(const s of sensors){if(!s.on)continue;
+  if(Math.hypot(cxp-(s.x+0.5)*TS,cyp-(s.y+0.5)*TS)<1.9*TS)seen=true;}
+ exposure+=seen?dt*1.25:-dt*0.8;exposure=Math.max(0,Math.min(1,exposure));
+ if(seen&&exposure>0.15&&Math.floor(t*6)%2===0)beep(1400,0.03,"square",0.02);
+ if(exposure>=1)caught();
+}
+function caught(){
+ strikes++;exposure=0;flashT=1;timeLeft-=20;
+ beep(700,0.3,"sawtooth",0.1);setTimeout(()=>beep(500,0.4,"sawtooth",0.1),200);
+ if(strikes>=3){gameOver("MISSION COMPROMISED","The klaxon wails across the valley and this time it doesn't stop. Floodlights crest the access road — the county sheriff, then the Army. You melt into the treeline empty-handed.<br><br>The colors stay behind. The wreckers come at dawn.");return;}
+ px=checkpoint.x;py=checkpoint.y;rx=px*TS;ry=py*TS;moving=false;
+ msg("A klaxon barks! You fall back and lie flat until the system resets. (Alert "+strikes+"/3 — lost 20 seconds)");
+}
+
+// ---------- end states ----------
+function win(){
+ state="win";beep(520,0.15);setTimeout(()=>beep(660,0.15),150);setTimeout(()=>beep(880,0.3),300);
+ const m=Math.floor(timeLeft/60),s=Math.floor(timeLeft%60);
+ document.getElementById("endTitle").textContent="COLORS RECOVERED";
+ document.getElementById("endText").innerHTML=
+  "The vault door swings wide. Folded in oilcloth, untouched by seventy years: the colors of the 112th — and beneath them, a small leather journal with your family's name inside the cover.<br><br>"+
+  "You're back through the wire before the demolition convoy's headlights crest the hill. Nothing broken that wasn't already broken. Nobody hurt. Only footprints.<br><br>"+
+  "TIME TO SPARE: "+m+":"+String(s).padStart(2,"0")+" &nbsp;·&nbsp; ALERTS TRIPPED: "+strikes+"/3";
+ document.getElementById("retry").textContent="INFILTRATE AGAIN";
+ document.getElementById("end").classList.remove("hidden");
+}
+function gameOver(title,text){
+ state="over";
+ document.getElementById("endTitle").textContent=title;
+ document.getElementById("endText").innerHTML=text;
+ document.getElementById("retry").textContent="TRY AGAIN";
+ document.getElementById("end").classList.remove("hidden");
+}
+
+// ---------- drawing ----------
+function groundColor(x,y){
+ if(x>15&&x<25)return((x+y)%2?"#141824":"#12161f");
+ if(x>25)return((x+y)%2?"#181420":"#151220");
+ return((x*7+y*13)%5<2)?"#0c1a10":"#0a160e";
+}
+function drawTile(x,y,ch){
+ const X=x*TS,Y=y*TS;
+ ctx.fillStyle=groundColor(x,y);ctx.fillRect(X,Y,TS,TS);
+ if(ch==="#"||ch==="T"){ctx.fillStyle="#232c3e";ctx.fillRect(X,Y,TS,TS);ctx.strokeStyle="#39455f";ctx.strokeRect(X+1.5,Y+1.5,TS-3,TS-3);ctx.strokeStyle="#1a2130";ctx.beginPath();ctx.moveTo(X,Y+TS/2);ctx.lineTo(X+TS,Y+TS/2);ctx.stroke();}
+ else if(ch==="F"){ctx.strokeStyle="#8892a8";ctx.lineWidth=1;
+  for(let i=0;i<=3;i++){ctx.beginPath();ctx.moveTo(X+i*10,Y);ctx.lineTo(X+i*10-10,Y+TS);ctx.moveTo(X+i*10-10,Y);ctx.lineTo(X+i*10,Y+TS);ctx.stroke();}
+  ctx.strokeStyle="#aab4c8";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(X,Y+2);ctx.lineTo(X+TS,Y+2);ctx.moveTo(X,Y+TS-2);ctx.lineTo(X+TS,Y+TS-2);ctx.stroke();ctx.lineWidth=1;}
+ else if(ch==="M"){ctx.fillStyle="#060a18";ctx.fillRect(X,Y,TS,TS);ctx.fillStyle="#0a1226";ctx.fillRect(X+4,Y+4,TS-8,TS-8);}
+ else if(ch==="B"){ctx.fillStyle="#060a18";ctx.fillRect(X,Y,TS,TS);ctx.fillStyle="#6b4a2a";for(let i=0;i<3;i++)ctx.fillRect(X+2,Y+3+i*10,TS-4,7);ctx.strokeStyle="#8a6238";ctx.strokeRect(X+2,Y+2,TS-4,TS-4);}
+ else if(ch==="C"){ctx.fillStyle="#232c3e";ctx.fillRect(X,Y,TS,TS);ctx.strokeStyle="#ffb347";ctx.beginPath();ctx.moveTo(X+6,Y+4);ctx.lineTo(X+14,Y+14);ctx.lineTo(X+9,Y+26);ctx.moveTo(X+20,Y+6);ctx.lineTo(X+17,Y+18);ctx.lineTo(X+24,Y+27);ctx.stroke();}
+ else if(ch==="R"){ctx.fillStyle="#161c2a";ctx.fillRect(X,Y,TS,TS);ctx.strokeStyle="#c8a25a";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(X+TS/2,Y);ctx.lineTo(X+TS/2,Y+TS);ctx.stroke();ctx.lineWidth=1;ctx.strokeStyle="#8a6f3d";for(let i=0;i<5;i++){ctx.beginPath();ctx.moveTo(X+TS/2-5,Y+4+i*6);ctx.lineTo(X+TS/2+5,Y+4+i*6);ctx.stroke();}}
+ else if(ch==="D"){ctx.fillStyle="#3a2c1a";ctx.beginPath();ctx.ellipse(X+TS/2,Y+TS/2,12,9,0,0,7);ctx.fill();ctx.fillStyle="#54401f";ctx.beginPath();ctx.ellipse(X+TS/2,Y+TS/2-3,8,5,0,0,7);ctx.fill();}
+ else if(ch==="U"){ctx.fillStyle="#000";ctx.beginPath();ctx.ellipse(X+TS/2,Y+TS/2,11,8,0,0,7);ctx.fill();ctx.strokeStyle="#54401f";ctx.stroke();}
+ else if(ch==="c"){ctx.fillStyle="#7a5a28";ctx.fillRect(X+4,Y+7,TS-8,TS-12);ctx.strokeStyle="#ffb347";ctx.strokeRect(X+4,Y+7,TS-8,TS-12);ctx.beginPath();ctx.moveTo(X+4,Y+TS/2+1);ctx.lineTo(X+TS-4,Y+TS/2+1);ctx.stroke();}
+ else if(ch==="g"){ctx.fillStyle="#3a4152";ctx.fillRect(X+3,Y+5,TS-6,TS-9);ctx.strokeStyle="#5a6478";ctx.strokeRect(X+3,Y+5,TS-6,TS-9);
+  ctx.fillStyle=power?(Math.floor(t*3)%2?"#ff3355":"#801828"):"#333";ctx.beginPath();ctx.arc(X+TS/2,Y+11,3,0,7);ctx.fill();
+  if(power){ctx.strokeStyle="rgba(255,180,80,"+(0.4+0.2*Math.sin(t*8))+")";ctx.beginPath();ctx.moveTo(X+8,Y+TS-6);ctx.lineTo(X+TS-8,Y+TS-6);ctx.stroke();}}
+ else if(ch==="s"){const s=sensorAt(x,y),on=s&&s.on&&power;
+  ctx.fillStyle="#2a3040";ctx.fillRect(X+11,Y+10,8,14);
+  ctx.fillStyle=on?(Math.floor(t*2)%2?"#ff3355":"#a02038"):"#3a4150";ctx.beginPath();ctx.arc(X+TS/2,Y+12,3.5,0,7);ctx.fill();}
+ else if(ch==="G"){ctx.fillStyle="#39455f";ctx.fillRect(X,Y,TS,TS);ctx.strokeStyle="#5a6a8a";for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(X+4+i*7,Y+2);ctx.lineTo(X+4+i*7,Y+TS-2);ctx.stroke();}
+  ctx.fillStyle=power?"#ff3355":"#00ff88";ctx.beginPath();ctx.arc(X+TS/2,Y+TS/2,3,0,7);ctx.fill();}
+ else if(ch==="O"){ctx.fillStyle="#0a0d16";ctx.fillRect(X,Y,TS,TS);ctx.strokeStyle="#39455f";ctx.strokeRect(X+1,Y+1,3,TS-2);ctx.strokeRect(X+TS-4,Y+1,3,TS-2);}
+ else if(ch==="V"){ctx.fillStyle="#2a2410";ctx.fillRect(X,Y,TS,TS);ctx.strokeStyle="#ffd700";ctx.lineWidth=2;ctx.strokeRect(X+3,Y+3,TS-6,TS-6);ctx.beginPath();ctx.arc(X+TS/2,Y+TS/2,7,0,7);ctx.stroke();ctx.lineWidth=1;
+  ctx.fillStyle="#ffd700";ctx.beginPath();ctx.arc(X+TS/2,Y+TS/2,2.5,0,7);ctx.fill();}
+ if(ch==="T"){ctx.fillStyle="#39455f";ctx.beginPath();ctx.arc(X+TS/2,Y+TS/2,10,0,7);ctx.fill();ctx.fillStyle=power?"#ffe9a0":"#444";ctx.beginPath();ctx.arc(X+TS/2,Y+TS/2,5,0,7);ctx.fill();}
+}
+function draw(){
+ ctx.clearRect(0,0,900,600);
+ for(let y=0;y<MH;y++)for(let x=0;x<MW;x++)drawTile(x,y,grid[y][x]);
+ // sensor rings
+ for(const s of sensors){if(!s.on||!power)continue;
+  ctx.strokeStyle="rgba(255,51,85,"+(0.25+0.15*Math.sin(t*3))+")";
+  ctx.beginPath();ctx.arc((s.x+0.5)*TS,(s.y+0.5)*TS,1.9*TS,0,7);ctx.stroke();
+  ctx.fillStyle="rgba(255,51,85,0.05)";ctx.fill();}
+ // player
+ const pxc=rx+TS/2,pyc=ry+TS/2;
+ ctx.fillStyle="#3f6b34";ctx.beginPath();ctx.arc(pxc,pyc,9,0,7);ctx.fill();
+ ctx.fillStyle="#5d8f4a";ctx.beginPath();ctx.arc(pxc,pyc-2,6.5,Math.PI,0);ctx.fill();
+ ctx.strokeStyle="#dfe8d0";ctx.beginPath();ctx.moveTo(pxc,pyc);ctx.lineTo(pxc+fx*11,pyc+fy*11);ctx.stroke();
+ // night overlay
+ const g=ctx.createRadialGradient(pxc,pyc,45,pxc,pyc,270);
+ g.addColorStop(0,"rgba(2,4,14,0)");g.addColorStop(1,"rgba(2,4,14,"+(power?0.72:0.82)+")");
+ ctx.fillStyle=g;ctx.fillRect(0,0,900,600);
+ // searchlight
+ if(power&&state!=="menu"){
+  ctx.fillStyle="rgba(255,238,150,0.16)";
+  ctx.beginPath();ctx.moveTo(TOWER.x,TOWER.y);
+  ctx.arc(TOWER.x,TOWER.y,7*TS,lightAng-0.30,lightAng+0.30);ctx.closePath();ctx.fill();
+  ctx.strokeStyle="rgba(255,238,150,0.3)";ctx.stroke();}
+ // exposure meter
+ if(exposure>0.02){
+  ctx.strokeStyle="#ff3355";ctx.lineWidth=3;
+  ctx.beginPath();ctx.arc(pxc,pyc-18,8,-Math.PI/2,-Math.PI/2+exposure*Math.PI*2);ctx.stroke();ctx.lineWidth=1;}
+ if(flashT>0){ctx.fillStyle="rgba(255,30,60,"+flashT*0.35+")";ctx.fillRect(0,0,900,600);}
+}
+
+// ---------- main loop ----------
+let last=performance.now();
+function loop(now){
+ const dt=Math.min(0.05,(now-last)/1000);last=now;t+=dt;
+ if(state==="play"){
+  lightAng+=dt*0.55;flashT=Math.max(0,flashT-dt*1.5);
+  if(moving){mvT+=dt/0.12;
+   if(mvT>=1)finishMove();
+   else{rx=(mvFrom.x+(px-mvFrom.x)*mvT)*TS;ry=(mvFrom.y+(py-mvFrom.y)*mvT)*TS;}}
+  if(!moving){const d=heldDir();if(d)tryMove(d[0],d[1],false);}
+  updateDetection(dt);
+  timeLeft-=dt;
+  if(timeLeft<=0){timeLeft=0;gameOver("DAWN","Grey light spills over the east wall and diesel engines rumble up the access road — the demolition convoy, right on time. You slip out through your own cuts and watch from the treeline as the wreckers roll in.<br><br>So close. The colors deserved better.");}
+  msgT-=dt;if(msgT<=0&&document.getElementById("msg").textContent){/* keep last msg visible */}
+  const m=Math.floor(timeLeft/60),s=Math.floor(timeLeft%60);
+  const ck=document.getElementById("clock");ck.textContent=String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
+  ck.className=timeLeft<60?"low":"";
+  document.getElementById("obj").textContent=objective();
+  document.getElementById("alerts").textContent="ALERT "+"▮".repeat(strikes)+"▯".repeat(3-strikes);
+ }
+ draw();
+ requestAnimationFrame(loop);
+}
+document.getElementById("start").onclick=()=>{reset();state="play";document.getElementById("intro").classList.add("hidden");beep(440,0.1);};
+document.getElementById("retry").onclick=()=>{reset();state="play";document.getElementById("end").classList.add("hidden");beep(440,0.1);};
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
